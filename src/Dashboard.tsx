@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios, { AxiosError } from "axios";
 import SpendingChart from "./SpendingChart";
 import InsightsPanel from "./InsightsPanel";
+import "dotenv/config";
 
 type Transaction = {
   date: string;
@@ -18,6 +19,11 @@ type ApiResponse = {
 interface ApiErrorResponse {
   error: string;
 }
+
+
+const apiUrl = import.meta.env.VITE_API_URL;
+const uploadUrl = import.meta.env.VITE_UPLOAD_URL || "/api/upload";
+
 
 const Dashboard: React.FC = () => {
   const [data, setData] = useState<ApiResponse | null>(null);
@@ -46,7 +52,7 @@ const Dashboard: React.FC = () => {
       formData.append("file", file);
 
       const res = await axios.post<ApiResponse>(
-        "http://localhost:8080/api/upload",
+        `${apiUrl}${uploadUrl}`,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
