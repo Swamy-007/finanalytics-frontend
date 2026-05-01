@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import axios, { AxiosError } from "axios";
 import SpendingChart from "./SpendingChart";
 import InsightsPanel from "./InsightsPanel";
-import "dotenv/config";
 
 type Transaction = {
   date: string;
@@ -20,9 +19,10 @@ interface ApiErrorResponse {
   error: string;
 }
 
-
 const apiUrl = import.meta.env.VITE_API_URL;
-const uploadUrl = import.meta.env.VITE_UPLOAD_URL || "/api/upload";
+
+console.log("API URL:", apiUrl);
+const uploadUrl =  import.meta.env.VITE_UPLOAD_URL || "/api/upload";
 
 
 const Dashboard: React.FC = () => {
