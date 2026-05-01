@@ -22,6 +22,10 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy custom nginx config for React Router support
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+# Copy and set permissions on entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 3003
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
