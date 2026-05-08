@@ -11,7 +11,8 @@ RUN npm ci
 # Copy source and build
 COPY . .
 
-RUN npm run build
+RUN npm run build -- --mode production
+
 
 # ── Stage 2: Serve with Nginx ───────────────────────────────────
 FROM nginx:alpine AS runner
