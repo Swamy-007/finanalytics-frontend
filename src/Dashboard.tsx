@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios, { AxiosError } from "axios";
 import SpendingChart from "./SpendingChart";
 import InsightsPanel from "./InsightsPanel";
+import { config } from './config';
 
 type Transaction = {
   date: string;
@@ -19,10 +20,11 @@ interface ApiErrorResponse {
   error: string;
 }
 
-const apiUrl = import.meta.env.VITE_API_URL;
+const apiUrl = config.apiUrl;
 
 console.log("API URL:", apiUrl);
-const uploadUrl =  import.meta.env.VITE_UPLOAD_URL || "/api/upload";
+const uploadUrl =  config.uploadUrl || "/api/upload";
+console.log("Upload URL:", uploadUrl);
 
 
 const Dashboard: React.FC = () => {
