@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import axios, { AxiosError } from "axios";
 import SpendingChart from "./SpendingChart";
 import InsightsPanel from "./InsightsPanel";
-import { config } from './config';
+
 
 type Transaction = {
   date: string;
@@ -26,11 +26,13 @@ const backendUrl = import.meta.env.VITE_API_URL;
 
 const env = import.meta.env.VITE_ENV;
 
+const uploadUrl =  import.meta.env.VITE_UPLOAD_URL || "/api/upload";
+
 console.log("Backend URL from config:", backendUrl+" ENV: " + env);
 //const apiUrl = config.appnae;
 console.log("API URL:", apiUrl);
 //const uploadUrl =  config.uploadUrl || "/api/upload";
-const uploadUrl =  import.meta.env.VITE_UPLOAD_URL || "/api/upload";
+
 
 console.log("Upload URL:", uploadUrl);
 
