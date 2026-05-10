@@ -20,10 +20,18 @@ interface ApiErrorResponse {
   error: string;
 }
 
-const apiUrl = config.apiUrl;
+const apiUrl = import.meta.env.VITE_API_URL;
+
+const backendUrl = import.meta.env.VITE_API_URL;
+
+const env = import.meta.env.VITE_ENV;
+
+console.log("Backend URL from config:", backendUrl+" ENV: " + env);
 //const apiUrl = config.appnae;
 console.log("API URL:", apiUrl);
-const uploadUrl =  config.uploadUrl || "/api/upload";
+//const uploadUrl =  config.uploadUrl || "/api/upload";
+const uploadUrl =  import.meta.env.VITE_UPLOAD_URL || "/api/upload";
+
 console.log("Upload URL:", uploadUrl);
 
 
