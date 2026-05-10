@@ -21,7 +21,7 @@ interface ApiErrorResponse {
 }
 
 const apiUrl = config.apiUrl;
-
+//const apiUrl = config.appnae;
 console.log("API URL:", apiUrl);
 const uploadUrl =  config.uploadUrl || "/api/upload";
 console.log("Upload URL:", uploadUrl);
