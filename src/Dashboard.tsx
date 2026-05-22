@@ -2,6 +2,11 @@ import React, { useState } from "react";
 import axios, { AxiosError } from "axios";
 import SpendingChart from "./SpendingChart";
 import InsightsPanel from "./InsightsPanel";
+//import { GoogleOAuthProvider } from '@react-oauth/google';
+//import { GoogleLogin } from '@react-oauth/google';
+//import { useGoogleLogin } from '@react-oauth/google';
+
+//import Login from "./login"
 
 
 type Transaction = {
@@ -26,6 +31,8 @@ const backendUrl = import.meta.env.VITE_API_URL;
 
 const env = import.meta.env.VITE_ENV;
 
+//const clientId = import.meta.env.VITE_CLIENT_ID;  
+
 const uploadUrl =  import.meta.env.VITE_UPLOAD_URL || "/api/upload";
 
 console.log("Backend URL from config:", backendUrl+" ENV: " + env);
@@ -37,12 +44,17 @@ console.log("API URL:", apiUrl);
 console.log("Upload URL:", uploadUrl);
 
 
+
 const Dashboard: React.FC = () => {
+  
+
+ 
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
 
+  
   const upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -60,6 +72,9 @@ const Dashboard: React.FC = () => {
     setLoading(true);
 
     try {
+
+  
+    
       const formData = new FormData();
       formData.append("file", file);
 
@@ -107,6 +122,7 @@ const Dashboard: React.FC = () => {
           Upload your credit card statement to get AI-powered insights
         </p>
       </div>
+      {/*<div><Login /></div>*/}
 
       {/* Upload area */}
       <label style={{
