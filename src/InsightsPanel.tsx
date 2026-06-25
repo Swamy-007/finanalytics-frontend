@@ -10,7 +10,6 @@ const parseInsights = (text: string) => {
   let current: { title: string; content: string } | null = null;
 
   lines.forEach((line) => {
-    // Matches: ### 1. Title  OR  ### **1. Title**  OR  ### **Title**
     const headingMatch = line.match(/^###\s+\**\d*\.?\**\s*\**(.+?)\**\s*$/);
     if (headingMatch) {
       if (current) sections.push(current);
@@ -24,62 +23,36 @@ const parseInsights = (text: string) => {
   return sections;
 };
 
-const renderInline = (text: string): React.ReactNode[] => {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
-  return parts.map((part, i) => {
+const renderInline = (text: string): React.ReactNode[] =>
+  text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**"))
-      return <strong key={i} style={{ color: "#fff", fontWeight: 600 }}>{part.slice(2, -2)}</strong>;
+      return <strong key={i} className="ip-bold">{part.slice(2, -2)}</strong>;
     if (part.startsWith("*") && part.endsWith("*"))
-      return <em key={i} style={{ color: "#aaa" }}>{part.slice(1, -1)}</em>;
+      return <em key={i} className="ip-em">{part.slice(1, -1)}</em>;
     return <span key={i}>{part}</span>;
   });
-};
 
-// Render markdown table into a styled HTML table
 const renderTable = (rows: string[]) => {
-  const headerCells = rows[0]
-    .split("|")
-    .map((c) => c.trim())
-    .filter(Boolean);
-
-  // rows[1] is the separator line (| :--- | :--- |), skip it
+  const headerCells = rows[0].split("|").map((c) => c.trim()).filter(Boolean);
   const bodyRows = rows.slice(2).map((row) =>
     row.split("|").map((c) => c.trim()).filter(Boolean)
   );
 
   return (
-    <div style={{ overflowX: "auto", marginBottom: 12 }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+    <div className="ip-table-wrap">
+      <table className="ip-table">
         <thead>
           <tr>
             {headerCells.map((cell, i) => (
-              <th key={i} style={{
-                textAlign: "left",
-                padding: "8px 12px",
-                color: "#888",
-                fontWeight: 500,
-                fontSize: 11,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                borderBottom: "0.5px solid #2A2A45",
-                whiteSpace: "nowrap",
-              }}>
-                {cell}
-              </th>
+              <th key={i} className="ip-th">{cell}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {bodyRows.map((row, ri) => (
-            <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "#16162A" }}>
+            <tr key={ri} className={ri % 2 === 0 ? "ip-tr-even" : "ip-tr-odd"}>
               {row.map((cell, ci) => (
-                <td key={ci} style={{
-                  padding: "8px 12px",
-                  color: ci === 0 ? "#fff" : "#bbb",
-                  fontWeight: ci === 0 ? 500 : 400,
-                  borderBottom: "0.5px solid #1E1E35",
-                  whiteSpace: "nowrap",
-                }}>
+                <td key={ci} className={`ip-td ${ci === 0 ? "ip-td-primary" : "ip-td-secondary"}`}>
                   {renderInline(cell)}
                 </td>
               ))}
@@ -103,7 +76,6 @@ const renderContent = (content: string) => {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Detect table block: line starts with |
     if (line.trim().startsWith("|")) {
       const tableRows: string[] = [];
       while (i < lines.length && lines[i].trim().startsWith("|")) {
@@ -117,32 +89,26 @@ const renderContent = (content: string) => {
     }
 
     const subBullet = line.match(/^\s{4,}\*\s+(.+)/);
-    const bullet = line.match(/^\*\s+(.+)/);
-    const plain = line.trim();
+    const bullet    = line.match(/^\*\s+(.+)/);
+    const plain     = line.trim();
 
     if (subBullet) {
       elements.push(
-        <div key={i} style={{ display: "flex", gap: 8, paddingLeft: 20, marginBottom: 5 }}>
-          <span style={{ color: "#555", fontSize: 12, marginTop: 2, flexShrink: 0 }}>◦</span>
-          <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-            {renderInline(subBullet[1])}
-          </p>
+        <div key={i} className="ip-sub-bullet">
+          <span className="ip-sub-dot">◦</span>
+          <p className="ip-sub-text">{renderInline(subBullet[1])}</p>
         </div>
       );
     } else if (bullet) {
       elements.push(
-        <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-          <span style={{ color: "#6C63FF", fontSize: 16, marginTop: 1, flexShrink: 0 }}>›</span>
-          <p style={{ color: "#ccc", fontSize: 14, lineHeight: 1.65, margin: 0 }}>
-            {renderInline(bullet[1])}
-          </p>
+        <div key={i} className="ip-bullet">
+          <span className="ip-bullet-arrow">›</span>
+          <p className="ip-bullet-text">{renderInline(bullet[1])}</p>
         </div>
       );
     } else if (plain) {
       elements.push(
-        <p key={i} style={{ color: "#bbb", fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>
-          {renderInline(plain)}
-        </p>
+        <p key={i} className="ip-plain-text">{renderInline(plain)}</p>
       );
     }
 
@@ -177,59 +143,31 @@ const InsightsPanel: React.FC<Props> = ({ insights }) => {
   const summary = summaryMatch ? summaryMatch[0].trim() : null;
 
   return (
-    <div style={{
-      background: "linear-gradient(160deg, #13131F, #1A1A2E)",
-      borderRadius: 20,
-      padding: "28px 28px 20px",
-      fontFamily: "'DM Sans', sans-serif",
-      maxWidth: 720,
-      boxShadow: "0 24px 64px rgba(0,0,0,0.45)",
-    }}>
-      <div style={{ marginBottom: 20 }}>
-        <p style={{ color: "#555", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 4px" }}>
-          AI Analysis
-        </p>
-        <h2 style={{ color: "#fff", fontSize: 20, fontWeight: 600, margin: "0 0 10px" }}>
-          Spending Insights
-        </h2>
+    <div className="ip-card">
+      <div className="ip-header">
+        <p className="ip-header-label">AI Analysis</p>
+        <h2 className="ip-header-title">Spending Insights</h2>
         {summary && (
-          <div style={{
-            background: "#1E1E35",
-            border: "0.5px solid #2A2A45",
-            borderRadius: 10,
-            padding: "10px 14px",
-          }}>
-            <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-              {renderInline(summary)}
-            </p>
+          <div className="ip-summary">
+            <p className="ip-summary-text">{renderInline(summary)}</p>
           </div>
         )}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="ip-sections">
         {sections.map((section, i) => {
           const meta = SECTION_META[section.title] ?? getFallbackMeta(i);
           return (
-            <div key={i} style={{
-              background: "#1A1A2C",
-              border: "0.5px solid #2A2A40",
-              borderLeft: `3px solid ${meta.accent}`,
-              borderRadius: 12,
-              overflow: "hidden",
-            }}>
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "12px 16px",
-                borderBottom: "0.5px solid #222236",
-              }}>
-                <span style={{ fontSize: 16 }}>{meta.icon}</span>
-                <h3 style={{ color: "#fff", fontSize: 14, fontWeight: 600, margin: 0 }}>
-                  {section.title}
-                </h3>
+            <div
+              key={i}
+              className="ip-section"
+              style={{ "--ip-accent": meta.accent } as React.CSSProperties}
+            >
+              <div className="ip-section-head">
+                <span className="ip-section-icon">{meta.icon}</span>
+                <h3 className="ip-section-title">{section.title}</h3>
               </div>
-              <div style={{ padding: "14px 16px" }}>
+              <div className="ip-section-body">
                 {renderContent(section.content)}
               </div>
             </div>
@@ -237,9 +175,7 @@ const InsightsPanel: React.FC<Props> = ({ insights }) => {
         })}
       </div>
 
-      <p style={{ color: "#333", fontSize: 11, textAlign: "center", marginTop: 18, marginBottom: 0 }}>
-        Generated by Gemini AI · based on your uploaded statement
-      </p>
+      <p className="ip-footer">Generated by Gemini AI · based on your uploaded statement</p>
     </div>
   );
 };

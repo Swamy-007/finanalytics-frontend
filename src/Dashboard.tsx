@@ -12,7 +12,7 @@ type Transaction = {
 
 type ApiResponse = {
   transactions: Transaction[];
-  insights: string;
+  insights?: string;
 };
 
 interface ApiErrorResponse {
@@ -50,7 +50,10 @@ const Dashboard: React.FC = () => {
       const res = await axios.post<ApiResponse>(
         `${apiUrl}${uploadPath}`,
         formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+          timeout: 125_000,
+        }
       );
 
       setData(res.data);
@@ -73,133 +76,61 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#0F0F1A",
-      padding: "32px 24px",
-      fontFamily: "'DM Sans', sans-serif",
-      color: "#fff",
-    }}>
+    <div className="dashboard-root">
 
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 4px" }}>
-          Spendwise AI
-        </h1>
-        <p style={{ color: "#666", fontSize: 14, margin: 0 }}>
+      <div className="dashboard-header">
+        <h1 className="dashboard-title">Spendwise AI</h1>
+        <p className="dashboard-subtitle">
           Upload your credit card statement to get AI-powered insights
         </p>
       </div>
 
-      {/* Upload area */}
-      <label style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        background: "#1A1A2E",
-        border: "1.5px dashed #2A2A45",
-        borderRadius: 14,
-        padding: "20px 24px",
-        cursor: "pointer",
-        marginBottom: 24,
-        transition: "border-color 0.2s",
-        maxWidth: 480,
-      }}>
-        <span style={{ fontSize: 28 }}>📄</span>
+      <label className="dashboard-upload">
+        <span className="dashboard-upload-icon">📄</span>
         <div>
-          <p style={{ color: "#fff", fontSize: 14, fontWeight: 500, margin: "0 0 2px" }}>
-            {fileName ? fileName : "Choose a PDF or CSV file"}
+          <p className="dashboard-upload-filename">
+            {fileName ?? "Choose a PDF or CSV file"}
           </p>
-          <p style={{ color: "#555", fontSize: 12, margin: 0 }}>
+          <p className="dashboard-upload-subtext">
             {fileName ? "Click to upload a different file" : "Click to browse — max 10 MB"}
           </p>
         </div>
         <input
+          className="dashboard-upload-input"
           type="file"
           accept=".pdf,.csv"
           onChange={upload}
-          style={{ display: "none" }}
         />
       </label>
 
-      {/* Loading state */}
       {loading && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          background: "#1A1A2E",
-          border: "0.5px solid #2A2A45",
-          borderRadius: 12,
-          padding: "16px 20px",
-          maxWidth: 480,
-          marginBottom: 24,
-        }}>
-          <div style={{
-            width: 16,
-            height: 16,
-            border: "2px solid #2A2A45",
-            borderTop: "2px solid #6C63FF",
-            borderRadius: "50%",
-            animation: "spin 0.8s linear infinite",
-          }} />
-          <p style={{ color: "#aaa", fontSize: 14, margin: 0 }}>
-            Analyzing your statement with AI...
-          </p>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div className="fw-loading-box">
+          <div className="fw-spinner" />
+          <p className="fw-loading-text">Analyzing your statement with AI...</p>
         </div>
       )}
 
-      {/* Error state */}
       {error && (
-        <div style={{
-          background: "#2A1A1A",
-          border: "0.5px solid #5A2A2A",
-          borderLeft: "3px solid #E24B4A",
-          borderRadius: 10,
-          padding: "12px 16px",
-          maxWidth: 480,
-          marginBottom: 24,
-        }}>
-          <p style={{ color: "#E24B4A", fontSize: 13, margin: 0 }}>⚠ {error}</p>
+        <div className="fw-alert-error fw-alert-left-bar">
+          <p>⚠ {error}</p>
         </div>
       )}
 
-      {/* Results */}
       {data && (
         <>
-          <div style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            background: "#1A2A1E",
-            border: "0.5px solid #2A4A2E",
-            borderRadius: 20,
-            padding: "6px 14px",
-            marginBottom: 20,
-          }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#2EAF7D" }} />
-            <span style={{ color: "#2EAF7D", fontSize: 12 }}>
+          <div className="fw-badge-success">
+            <div className="fw-dot-success" />
+            <span className="fw-badge-label">
               {data.transactions.length} transactions analyzed
             </span>
           </div>
 
-          <div style={{
-            display: "flex",
-            gap: 24,
-            alignItems: "flex-start",
-            flexWrap: "wrap",
-          }}>
-            <div style={{ flex: "0 0 640px", maxWidth: "100%" }}>
+          <div className="dashboard-results">
+            <div className="dashboard-chart-col">
               <SpendingChart transactions={data.transactions} />
             </div>
-            <div style={{
-              flex: 1,
-              minWidth: 320,
-              maxHeight: 700,
-              overflowY: "auto",
-            }}>
-              <InsightsPanel insights={data.insights} />
+            <div className="dashboard-insights-col">
+              <InsightsPanel insights={data.insights ?? ""} />
             </div>
           </div>
         </>

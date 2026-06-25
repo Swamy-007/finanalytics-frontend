@@ -3,9 +3,7 @@ import { jwtDecode } from 'jwt-decode';
 
 import axios from "axios";
 import { useState } from 'react';
-import Dashboard from './Dashboard';
-
-
+import Home from './Home';
 
 type User = {
  
@@ -15,6 +13,7 @@ type User = {
   email_verified: boolean;
   exp: number;
   iat: number;
+  token?: string;
 };
 
 type Transaction = {
@@ -53,9 +52,7 @@ type decoded={
     if(!user)
     {                                                                                             
        return (
-       
-    <div>
-
+    <div className="finwise-login">
       <h1>Login with Google</h1>
       <GoogleLogin
         onSuccess={async credentialResponse => {
@@ -90,8 +87,8 @@ console.log("email_verified:", decoded.email_verified);
             picture: decoded.picture,
             email_verified: decoded.email_verified,
             exp: decoded.exp,
-            iat: decoded.iat
-            
+            iat: decoded.iat,
+            token: credentialResponse.credential || undefined
           });
         }}
   
@@ -106,14 +103,7 @@ console.log("email_verified:", decoded.email_verified);
     }
 
     return (
-      <div>
-       <div style={{ textAlign: "center", marginBottom: "20px" , padding: "10px"}}>
-  Welcome to the Credit Card Statement Analyzer!  {user?.name} {user.picture?
-   <img src={user.picture} alt="Profile" style={{ width: "25px", borderRadius: "50%", marginLeft: "10px" }} /> : null  }
-       </div>
-       {/*<div><Login /></div>*/}
-       <div><Dashboard /></div>
-      </div>
+      <Home user={user} onLogout={() => setUser(null)} />
     );
 
 }

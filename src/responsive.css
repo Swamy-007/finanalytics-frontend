@@ -1,0 +1,150 @@
+/* ─────────────────────────────────────────────────────
+   Global box-sizing so inputs/selects never overflow
+───────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* ─────────────────────────────────────────────────────
+   Table overflow — wrap tables so they scroll on mobile
+───────────────────────────────────────────────────── */
+.finwise-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+
+/* ─────────────────────────────────────────────────────
+   Login page centering
+───────────────────────────────────────────────────── */
+.finwise-login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100svh;
+  gap: 24px;
+  padding: 40px 24px;
+  background: var(--fw-bg-page);
+  color: var(--fw-text-primary);
+  font-family: 'DM Sans', sans-serif;
+  transition: background 0.3s, color 0.3s;
+}
+
+.finwise-login h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+  background: linear-gradient(to right, #4338CA, #6C63FF);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ── Dark-mode overrides for native form controls ── */
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  color-scheme: dark;
+}
+
+/* ─────────────────────────────────────────────────────
+   Responsive — Tablet (≤ 900 px)
+───────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+
+  /* Navbar: collapse to 2 rows
+     Row 1 = logo (left) + user section (right)
+     Row 2 = nav links (full width, scrollable)        */
+  .finwise-nav {
+    flex-wrap: wrap !important;
+    height: auto !important;
+    min-height: 56px !important;
+    padding: 8px 16px !important;
+  }
+
+  .finwise-nav-links {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    padding: 4px 0 6px !important;
+    gap: 2px !important;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .finwise-nav-links::-webkit-scrollbar { display: none; }
+
+  .finwise-user-section {
+    margin-left: auto;
+  }
+
+  /* Hide the user's display name; keep avatar + logout */
+  .finwise-user-name {
+    display: none !important;
+  }
+
+  /* Wizard stepper: steps scroll horizontally, actions below */
+  .finwise-stepper {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    height: auto !important;
+    padding: 12px 16px !important;
+    gap: 10px !important;
+  }
+
+  .finwise-stepper-steps {
+    overflow-x: auto;
+    width: 100%;
+    padding-bottom: 4px;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .finwise-stepper-steps::-webkit-scrollbar { display: none; }
+
+  .finwise-stepper-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  /* Page areas */
+  .finwise-content {
+    padding: 20px 16px !important;
+  }
+
+  .finwise-page-header {
+    padding: 16px 16px 0 !important;
+  }
+
+  .finwise-alerts {
+    padding: 12px 16px 0 !important;
+    flex-wrap: wrap !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────
+   Responsive — Mobile (≤ 540 px)
+───────────────────────────────────────────────────── */
+@media (max-width: 540px) {
+
+  .finwise-content {
+    padding: 14px 12px !important;
+  }
+
+  .finwise-page-header {
+    padding: 12px 12px 0 !important;
+  }
+
+  .finwise-alerts {
+    padding: 8px 12px 0 !important;
+  }
+
+  /* Stepper step labels hidden on very small screens */
+  .finwise-stepper-label {
+    display: none !important;
+  }
+
+  /* Stepper connector lines shorten */
+  .finwise-stepper-connector {
+    width: 20px !important;
+    margin: 0 6px !important;
+  }
+}
