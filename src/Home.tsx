@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import Dashboard from "./Dashboard";
 import { useTheme } from "./ThemeContext.ts";
+
+const apiUrl = (import.meta.env.VITE_API_URL as string) || "";
 
 type User = {
   name: string;
@@ -179,47 +181,36 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
   const [evaluateMode, setEvaluateMode] = useState<boolean>(false);
   const [evaluateStep, setEvaluateStep] = useState<number>(1);
 
-  const apiUrl = import.meta.env.VITE_API_URL || "";
+  const getAxiosConfig = useCallback(() => ({
+    headers: { Authorization: `Bearer ${user.token}` },
+  }), [user.token]);
 
-  // Axios config with headers
-  const getAxiosConfig = () => {
-    return {
-      headers: {
-        Authorization: `Bearer ${user.token}`
-      }
-    };
-  };
-
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       const res = await axios.get<UserProfile | null>(`${apiUrl}/api/users/profile`, getAxiosConfig());
-      if (res.data) {
-        setProfile(res.data);
-      }
+      if (res.data) setProfile(res.data);
     } catch (err) {
       console.error("Error fetching profile", err);
     }
-  };
+  }, [getAxiosConfig]);
 
-  const fetchFinancialData = async () => {
+  const fetchFinancialData = useCallback(async () => {
     try {
       const res = await axios.get<FinancialData | null>(`${apiUrl}/api/financial-data`, getAxiosConfig());
-      if (res.data) {
-        setFinancialData(res.data);
-      }
+      if (res.data) setFinancialData(res.data);
     } catch (err) {
       console.error("Error fetching financial data", err);
     }
-  };
+  }, [getAxiosConfig]);
 
-  const fetchCases = async () => {
+  const fetchCases = useCallback(async () => {
     try {
       const res = await axios.get<Case[]>(`${apiUrl}/api/cases`, getAxiosConfig());
       setCases(res.data);
     } catch (err) {
       console.error("Error fetching cases", err);
     }
-  };
+  }, [getAxiosConfig]);
 
   // Load user data on mount
   useEffect(() => {
@@ -228,7 +219,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       await fetchFinancialData();
       await fetchCases();
     })();
-  }, []);
+  }, [fetchProfile, fetchFinancialData, fetchCases]);
 
   useEffect(() => {
     if (activeTab !== "admin") return;
@@ -242,10 +233,10 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
         console.error("Error fetching admin data", err);
       }
     })();
-  }, [activeTab]);
+  }, [activeTab, getAxiosConfig]);
 
   // Handle Saves
-  const handleSaveProfile = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveProfile = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
@@ -255,13 +246,13 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       setProfile(res.data);
       setSuccessMsg("Personal profile saved successfully!");
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to save profile");
+      setError(axios.isAxiosError(err) ? err.response?.data?.error || "Failed to save profile" : "Failed to save profile");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSaveFinancial = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveFinancial = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
@@ -271,7 +262,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       setFinancialData(res.data);
       setSuccessMsg("Financial profile saved successfully!");
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to save financial data");
+      setError(axios.isAxiosError(err) ? err.response?.data?.error || "Failed to save financial data" : "Failed to save financial data");
     } finally {
       setLoading(false);
     }
@@ -293,7 +284,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       }
       setSuccessMsg("AI Audit completed successfully! New recommendations generated.");
     } catch (err) {
-      setError(err.response?.data?.error || "AI Analysis failed. Make sure your profile and financial inputs are saved.");
+      setError(axios.isAxiosError(err) ? err.response?.data?.error || "AI Analysis failed. Make sure your profile and financial inputs are saved." : "AI Analysis failed. Make sure your profile and financial inputs are saved.");
     } finally {
       setLoading(false);
     }
@@ -306,12 +297,12 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       setCases(prev => prev.map(c => c.id === caseId ? { ...c, status } : c));
       setSuccessMsg(`Product recommendation offer ${status.toLowerCase()}!`);
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to update offer status");
+      setError(axios.isAxiosError(err) ? err.response?.data?.error || "Failed to update offer status" : "Failed to update offer status");
     }
   };
 
   // Submit product application
-  const handleSubmitApplication = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmitApplication = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     if (!applyingCase) return;
     if (!appTerms) {
@@ -342,7 +333,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       setAppAmount(0);
       setAppTerms(false);
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to submit application");
+      setError(axios.isAxiosError(err) ? err.response?.data?.error || "Failed to submit application" : "Failed to submit application");
     } finally {
       setSubmittingApp(false);
     }
@@ -1309,10 +1300,10 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                                 Application Submitted
                               </div>
                               <div style={{ color: "#166534" }}>
-                                Ref: <strong>{c.applicationDetails?.referenceNumber}</strong>
+                                Ref: <strong>{String(c.applicationDetails?.referenceNumber ?? "")}</strong>
                               </div>
                               <div style={{ color: "#166534" }}>
-                                Submitted: {new Date(c.applicationDetails?.submittedAt).toLocaleDateString()}
+                                Submitted: {new Date(String(c.applicationDetails?.submittedAt ?? "")).toLocaleDateString()}
                               </div>
                             </div>
                           )}
