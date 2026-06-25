@@ -3,7 +3,6 @@ import {
   PieChart,
   Pie,
   Tooltip,
-  Cell,
   ResponsiveContainer,
 } from "recharts";
 
@@ -41,12 +40,8 @@ const getColor = (category: string, index: number): string =>
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 
-// ── Tooltip types ───────────────────────────────────────────────
 interface TooltipPayloadItem {
-  payload: {
-    name: string;
-    value: number;
-  };
+  payload: { name: string; value: number };
 }
 
 interface CustomTooltipProps {
@@ -54,78 +49,25 @@ interface CustomTooltipProps {
   payload?: TooltipPayloadItem[];
 }
 
-// ── Custom tooltip ──────────────────────────────────────────────
 const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const { name, value } = payload[0].payload;
   return (
-    <div style={{
-      background: "#1E1E2E",
-      border: "1px solid #2E2E42",
-      borderRadius: 10,
-      padding: "10px 14px",
-      boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
-    }}>
-      <p style={{ color: "#aaa", fontSize: 11, marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-        {name}
-      </p>
-      <p style={{ color: "#fff", fontSize: 18, fontWeight: 700, margin: 0 }}>
-        {formatCurrency(value)}
-      </p>
+    <div className="sc-tooltip">
+      <p className="sc-tooltip-name">{name}</p>
+      <p className="sc-tooltip-value">{formatCurrency(value)}</p>
     </div>
   );
 };
 
-// ── Custom legend ───────────────────────────────────────────────
-interface LegendItem {
-  name: string;
-  value: number;
-  color: string;
-}
-
-const CustomLegend: React.FC<{ data: LegendItem[] }> = ({ data }) => {
-  const total = data.reduce((sum, d) => sum + d.value, 0);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 180 }}>
-      {data.map((item) => (
-        <div
-          key={item.name}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: item.color,
-              flexShrink: 0,
-            }} />
-            <span style={{ fontSize: 13, color: "#ccc", whiteSpace: "nowrap" }}>
-              {item.name}
-            </span>
-          </div>
-          <span style={{ fontSize: 12, color: "#888", fontVariantNumeric: "tabular-nums" }}>
-            {((item.value / total) * 100).toFixed(1)}%
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// ── Chart data type ─────────────────────────────────────────────
 interface ChartDataItem {
   name: string;
   value: number;
   color: string;
+  fill: string;
+  fillOpacity: number;
 }
 
-// ── Main component ──────────────────────────────────────────────
 const SpendingChart: React.FC<Props> = ({ transactions }) => {
   const map: Record<string, number> = {};
 
@@ -136,50 +78,30 @@ const SpendingChart: React.FC<Props> = ({ transactions }) => {
   });
 
   const data: ChartDataItem[] = Object.keys(map)
-    .map((k, i) => ({ name: k, value: map[k], color: getColor(k, i) }))
+    .map((k, i) => ({ name: k, value: map[k], color: getColor(k, i), fill: getColor(k, i), fillOpacity: 0.92 }))
     .sort((a, b) => b.value - a.value);
 
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
   if (data.length === 0) {
-    return (
-      <div style={{ textAlign: "center", color: "#666", padding: 40 }}>
-        No spending data to display.
-      </div>
-    );
+    return <div className="sc-empty">No spending data to display.</div>;
   }
 
   return (
-    <div style={{
-      background: "linear-gradient(145deg, #16162A, #1E1E36)",
-      borderRadius: 20,
-      padding: "28px 32px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 24,
-      fontFamily: "'DM Sans', sans-serif",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
-      maxWidth: 640,
-    }}>
+    <div className="sc-card">
 
       {/* Header */}
       <div>
-        <p style={{ color: "#666", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 4px" }}>
-          Breakdown
-        </p>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <h2 style={{ color: "#fff", fontSize: 22, fontWeight: 600, margin: 0 }}>
-            Spending by Category
-          </h2>
-          <span style={{ color: "#E8C06A", fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-            {formatCurrency(total)}
-          </span>
+        <p className="sc-header-label">Breakdown</p>
+        <div className="sc-header-row">
+          <h2 className="sc-header-title">Spending by Category</h2>
+          <span className="sc-header-total">{formatCurrency(total)}</span>
         </div>
       </div>
 
       {/* Chart + Legend */}
-      <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
-        <div style={{ flex: "0 0 240px", height: 240 }}>
+      <div className="sc-body">
+        <div className="sc-chart-wrap">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -187,38 +109,41 @@ const SpendingChart: React.FC<Props> = ({ transactions }) => {
                 dataKey="value"
                 cx="50%"
                 cy="50%"
-                innerRadius={60}
-                outerRadius={110}
+                innerRadius="38%"
+                outerRadius="80%"
                 paddingAngle={3}
                 strokeWidth={0}
-              >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} opacity={0.92} />
-                ))}
-              </Pie>
+              />
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
         </div>
-        <CustomLegend data={data} />
+
+        <div className="sc-legend">
+          {data.map((item) => (
+            <div key={item.name} className="sc-legend-item">
+              <div className="sc-legend-name-group">
+                <div className="sc-legend-dot" style={{ background: item.color }} />
+                <span className="sc-legend-name">{item.name}</span>
+              </div>
+              <span className="sc-legend-pct">
+                {((item.value / total) * 100).toFixed(1)}%
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Top 3 summary bar */}
-      <div style={{ borderTop: "1px solid #2A2A40", paddingTop: 16, display: "flex", gap: 12 }}>
+      {/* Top-3 summary */}
+      <div className="sc-summary-bar">
         {data.slice(0, 3).map((item) => (
-          <div key={item.name} style={{
-            flex: 1,
-            background: "#12121E",
-            borderRadius: 10,
-            padding: "10px 12px",
-            borderLeft: `3px solid ${item.color}`,
-          }}>
-            <p style={{ color: "#888", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 4px" }}>
-              {item.name}
-            </p>
-            <p style={{ color: "#fff", fontSize: 15, fontWeight: 600, margin: 0, fontVariantNumeric: "tabular-nums" }}>
-              {formatCurrency(item.value)}
-            </p>
+          <div
+            key={item.name}
+            className="sc-summary-item"
+            style={{ "--sc-item-color": item.color } as React.CSSProperties}
+          >
+            <p className="sc-summary-label">{item.name}</p>
+            <p className="sc-summary-value">{formatCurrency(item.value)}</p>
           </div>
         ))}
       </div>
