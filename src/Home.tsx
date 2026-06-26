@@ -1,9 +1,50 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, Component } from "react";
 import axios from "axios";
 import Dashboard from "./Dashboard";
 import { useTheme } from "./ThemeContext.ts";
 
 const apiUrl = (import.meta.env.VITE_API_URL as string) || "";
+
+class ErrorBoundary extends Component<
+  { children: React.ReactNode; fallback?: string },
+  { hasError: boolean; errorMessage: string }
+> {
+  constructor(props: { children: React.ReactNode; fallback?: string }) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMessage: error.message };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[ErrorBoundary] Render error caught:', error.message, '\nComponent stack:', info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12,
+          padding: "32px 24px", textAlign: "center", margin: "24px 0"
+        }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>⚠️</div>
+          <div style={{ fontWeight: 600, color: "#991B1B", marginBottom: 6 }}>
+            {this.props.fallback ?? "Something went wrong rendering this section."}
+          </div>
+          <div style={{ fontSize: 12, color: "#B91C1C" }}>{this.state.errorMessage}</div>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, errorMessage: "" })}
+            style={{
+              marginTop: 16, background: "#E24B4B", color: "#fff", border: "none",
+              borderRadius: 6, padding: "8px 18px", cursor: "pointer", fontSize: 13
+            }}
+          >Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type User = {
   name: string;
@@ -57,13 +98,25 @@ interface Liability {
   monthlyPayment: number;
 }
 
+interface Expenditure {
+  type: "credit_card" | "insurance" | "other";
+  description: string;
+  monthlyAmount: number;
+}
+
+interface Saving {
+  type: "401k" | "ira" | "emergency" | "investment" | "other";
+  description: string;
+  monthlyContribution: number;
+}
+
 interface FinancialData {
   assets: Asset[];
   liabilities: Liability[];
-  monthlyCreditCardBills: number;
-  monthlySavings: number;
-  insuranceExpenses: number;
-  otherRecurringCommitments: number;
+  primaryYearlyIncome: number;
+  familyYearlyIncome: number;
+  expenditures: Expenditure[];
+  savings: Saving[];
 }
 
 interface Product {
@@ -133,10 +186,10 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
   const [financialData, setFinancialData] = useState<FinancialData>({
     assets: [],
     liabilities: [],
-    monthlyCreditCardBills: 0,
-    monthlySavings: 0,
-    insuranceExpenses: 0,
-    otherRecurringCommitments: 0
+    primaryYearlyIncome: 0,
+    familyYearlyIncome: 0,
+    expenditures: [{ type: "credit_card", description: "", monthlyAmount: 0 }],
+    savings: [{ type: "401k", description: "", monthlyContribution: 0 }],
   });
 
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
@@ -179,6 +232,9 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
   // Navigation & wizard states
   const [showFinancialMenu, setShowFinancialMenu] = useState<boolean>(false);
   const [evaluateMode, setEvaluateMode] = useState<boolean>(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState<boolean>(false);
+
+  const closeMobileNav = () => setMobileNavOpen(false);
   const [evaluateStep, setEvaluateStep] = useState<number>(1);
 
   const getAxiosConfig = useCallback(() => ({
@@ -190,16 +246,33 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       const res = await axios.get<UserProfile | null>(`${apiUrl}/api/users/profile`, getAxiosConfig());
       if (res.data) setProfile(res.data);
     } catch (err) {
-      console.error("Error fetching profile", err);
+      console.error('[fetchProfile] Failed to fetch user profile:', err);
     }
   }, [getAxiosConfig]);
 
   const fetchFinancialData = useCallback(async () => {
     try {
       const res = await axios.get<FinancialData | null>(`${apiUrl}/api/financial-data`, getAxiosConfig());
-      if (res.data) setFinancialData(res.data);
+      if (res.data) {
+        if (!Array.isArray(res.data.expenditures)) {
+          console.warn('[fetchFinancialData] expenditures field missing or not an array in server response — keeping defaults. Raw data:', res.data);
+        }
+        if (!Array.isArray(res.data.savings)) {
+          console.warn('[fetchFinancialData] savings field missing or not an array in server response — keeping defaults. Raw data:', res.data);
+        }
+        setFinancialData(prev => ({
+          ...prev,
+          ...res.data,
+          expenditures: Array.isArray(res.data!.expenditures) && res.data!.expenditures.length > 0
+            ? res.data!.expenditures
+            : prev.expenditures,
+          savings: Array.isArray(res.data!.savings) && res.data!.savings.length > 0
+            ? res.data!.savings
+            : prev.savings,
+        }));
+      }
     } catch (err) {
-      console.error("Error fetching financial data", err);
+      console.error('[fetchFinancialData] Failed to fetch financial data:', err);
     }
   }, [getAxiosConfig]);
 
@@ -208,7 +281,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       const res = await axios.get<Case[]>(`${apiUrl}/api/cases`, getAxiosConfig());
       setCases(res.data);
     } catch (err) {
-      console.error("Error fetching cases", err);
+      console.error('[fetchCases] Failed to fetch cases:', err);
     }
   }, [getAxiosConfig]);
 
@@ -380,6 +453,48 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
     }));
   };
 
+  const addExpenditure = () => {
+    setFinancialData(prev => ({
+      ...prev,
+      expenditures: [...prev.expenditures, { type: "credit_card", description: "", monthlyAmount: 0 }]
+    }));
+  };
+
+  const removeExpenditure = (index: number) => {
+    setFinancialData(prev => ({
+      ...prev,
+      expenditures: prev.expenditures.filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateExpenditure = (index: number, field: keyof Expenditure, value: string | number) => {
+    setFinancialData(prev => ({
+      ...prev,
+      expenditures: prev.expenditures.map((e, i) => i === index ? { ...e, [field]: value } : e)
+    }));
+  };
+
+  const addSaving = () => {
+    setFinancialData(prev => ({
+      ...prev,
+      savings: [...prev.savings, { type: "401k", description: "", monthlyContribution: 0 }]
+    }));
+  };
+
+  const removeSaving = (index: number) => {
+    setFinancialData(prev => ({
+      ...prev,
+      savings: prev.savings.filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateSaving = (index: number, field: keyof Saving, value: string | number) => {
+    setFinancialData(prev => ({
+      ...prev,
+      savings: prev.savings.map((s, i) => i === index ? { ...s, [field]: value } : s)
+    }));
+  };
+
   const addFamilyMember = () => {
     if (!newFamilyName.trim()) return;
     setProfile(prev => ({
@@ -462,234 +577,147 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "0 32px",
+        padding: "0 24px",
         position: "sticky",
         top: 0,
         zIndex: 100,
         flexShrink: 0
       }}>
         {/* Logo */}
-        <div className="finwise-nav-logo" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="finwise-nav-logo" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: 8,
+            width: 36, height: 36, borderRadius: 8,
             background: "linear-gradient(135deg, #6C63FF 0%, #4D33FF 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: "bold",
-            fontSize: 18,
-            boxShadow: "0 0 15px rgba(108, 99, 255, 0.4)"
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontWeight: "bold", fontSize: 18, boxShadow: "0 0 15px rgba(108, 99, 255, 0.4)"
           }}>F</div>
           <div>
             <span style={{
-              fontSize: 18,
-              fontWeight: 700,
+              fontSize: 17, fontWeight: 700,
               background: "linear-gradient(to right, #4338CA, #6C63FF)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent"
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
             }}>Financial AI Solutions</span>
             <div style={{ fontSize: 10, color: "var(--fw-text-muted)", fontWeight: 500 }}>ADVISORY PORTAL</div>
           </div>
         </div>
 
-        {/* Nav Links */}
-        <div className="finwise-nav-links" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        {/* Nav Links — hidden on mobile, visible on desktop */}
+        <div className={`finwise-nav-links${mobileNavOpen ? " open" : ""}`}>
           <button
-            onClick={() => { setActiveTab("health"); setEvaluateMode(false); setShowFinancialMenu(false); }}
+            className="finwise-nav-btn-item"
+            onClick={() => { setActiveTab("health"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}
             style={{
               background: activeTab === "health" && !evaluateMode ? "var(--fw-nav-active-bg)" : "transparent",
-              border: "none",
-              borderRadius: 8,
-              padding: "8px 18px",
-              color: activeTab === "health" && !evaluateMode ? "#A5A1FF" : "#8A8AAB",
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: "pointer"
+              color: activeTab === "health" && !evaluateMode ? "#A5A1FF" : "#FFFFFF",
             }}
-          >
-            Home
-          </button>
+          >Home</button>
 
           <div
-            style={{ position: "relative" }}
+            className="finwise-nav-dropdown-wrap"
             onMouseEnter={() => setShowFinancialMenu(true)}
             onMouseLeave={() => setShowFinancialMenu(false)}
           >
-            <button
-              style={{
-                background: evaluateMode || activeTab === "upload" || activeTab === "stocks" ? "var(--fw-nav-active-bg)" : "transparent",
-                border: "none",
-                borderRadius: 8,
-                padding: "8px 18px",
-                color: evaluateMode || activeTab === "upload" || activeTab === "stocks" ? "#A5A1FF" : "#8A8AAB",
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 6
-              }}
-            >
+            <button className="finwise-nav-btn-item" style={{
+              background: evaluateMode || activeTab === "upload" || activeTab === "stocks" ? "var(--fw-nav-active-bg)" : "transparent",
+              color: evaluateMode || activeTab === "upload" || activeTab === "stocks" ? "#A5A1FF" : "#FFFFFF",
+              display: "flex", alignItems: "center", gap: 6,
+            }}>
               Financial AI Solutions ▾
             </button>
-            {showFinancialMenu && (
-              <div style={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                background: "var(--fw-bg-card)",
-                border: "1px solid var(--fw-border)",
-                borderRadius: 8,
-                minWidth: 220,
-                boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-                zIndex: 200,
-                overflow: "hidden"
-              }}>
-                <button
-                  onClick={startEvaluateFlow}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    background: "transparent",
-                    border: "none",
-                    borderBottom: "1px solid var(--fw-border)",
-                    padding: "12px 16px",
-                    color: "#4338CA",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    textAlign: "left"
-                  }}
-                >
-                  📊 Evaluate Financials
-                </button>
-                <button
-                  onClick={() => { setActiveTab("upload"); setEvaluateMode(false); setShowFinancialMenu(false); }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    background: "transparent",
-                    border: "none",
-                    borderBottom: "1px solid var(--fw-border)",
-                    padding: "12px 16px",
-                    color: "#4338CA",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    textAlign: "left"
-                  }}
-                >
-                  💳 Credit Card Analyzer
-                </button>
-                <button
-                  onClick={() => { setActiveTab("stocks"); setEvaluateMode(false); setShowFinancialMenu(false); }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    background: "transparent",
-                    border: "none",
-                    padding: "12px 16px",
-                    color: "#4338CA",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    textAlign: "left"
-                  }}
-                >
-                  📈 Your Stocks Analyzer
-                </button>
+            {(showFinancialMenu || mobileNavOpen) && (
+              <div className="finwise-nav-submenu">
+                <button onClick={() => { startEvaluateFlow(); closeMobileNav(); }} style={{
+                  display: "block", width: "100%", background: "transparent", border: "none",
+                  borderBottom: "1px solid var(--fw-border)", padding: "12px 16px",
+                  color: "#FFFFFF", fontSize: 14, fontWeight: 500, cursor: "pointer", textAlign: "left"
+                }}>📊 Evaluate Financials</button>
+                <button onClick={() => { setActiveTab("upload"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }} style={{
+                  display: "block", width: "100%", background: "transparent", border: "none",
+                  borderBottom: "1px solid var(--fw-border)", padding: "12px 16px",
+                  color: "#FFFFFF", fontSize: 14, fontWeight: 500, cursor: "pointer", textAlign: "left"
+                }}>💳 Credit Card Analyzer</button>
+                <button onClick={() => { setActiveTab("stocks"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }} style={{
+                  display: "block", width: "100%", background: "transparent", border: "none",
+                  padding: "12px 16px", color: "#FFFFFF", fontSize: 14, fontWeight: 500, cursor: "pointer", textAlign: "left"
+                }}>📈 Your Stocks Analyzer</button>
               </div>
             )}
           </div>
 
           <button
-            onClick={() => { setActiveTab("contact"); setEvaluateMode(false); setShowFinancialMenu(false); }}
+            className="finwise-nav-btn-item"
+            onClick={() => { setActiveTab("contact"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}
             style={{
               background: activeTab === "contact" ? "var(--fw-nav-active-bg)" : "transparent",
-              border: "none",
-              borderRadius: 8,
-              padding: "8px 18px",
-              color: activeTab === "contact" ? "#A5A1FF" : "#8A8AAB",
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: "pointer"
+              color: activeTab === "contact" ? "#A5A1FF" : "#FFFFFF",
             }}
-          >
-            Contact Us
-          </button>
+          >Contact Us</button>
+
+          {/* Mobile-only: show user controls inside the menu */}
+          <div className="finwise-mobile-user-row">
+            <button onClick={toggleTheme} title={theme === "dark" ? "Light mode" : "Dark mode"} style={{
+              background: "transparent", border: "1px solid var(--fw-border)", borderRadius: 6,
+              padding: "5px 9px", color: "var(--fw-text-secondary)", fontSize: 15, cursor: "pointer"
+            }}>{theme === "dark" ? "☀️" : "🌙"}</button>
+            <button onClick={() => { setActiveTab("admin"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}
+              style={{
+                background: activeTab === "admin" ? "var(--fw-nav-active-bg)" : "transparent",
+                border: "none", borderRadius: 6, padding: "6px 10px",
+                color: activeTab === "admin" ? "#A5A1FF" : "#5F5F88", fontSize: 16, cursor: "pointer"
+              }} title="Admin Panel">🛡️</button>
+            <button onClick={onLogout} style={{
+              background: "#FFF1F2", border: "1px solid #FECACA", borderRadius: 6,
+              padding: "6px 14px", color: "#E24B4B", fontSize: 12, fontWeight: 500, cursor: "pointer"
+            }}>Logout</button>
+          </div>
         </div>
 
-        {/* User section */}
-        <div className="finwise-user-section" style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Theme toggle */}
+        {/* Right side: user section (desktop) + hamburger (mobile) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Desktop user controls */}
+          <div className="finwise-user-section" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={toggleTheme} title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              style={{
+                background: "transparent", border: "1px solid var(--fw-border)", borderRadius: 6,
+                padding: "5px 9px", color: "var(--fw-text-secondary)", fontSize: 15, cursor: "pointer", lineHeight: 1
+              }}>{theme === "dark" ? "☀️" : "🌙"}</button>
+            <button
+              data-testid="desktop-admin-btn"
+              onClick={() => { setActiveTab("admin"); setEvaluateMode(false); setShowFinancialMenu(false); }}
+              style={{
+                background: activeTab === "admin" ? "var(--fw-nav-active-bg)" : "transparent",
+                border: "none", borderRadius: 6, padding: "6px 10px",
+                color: activeTab === "admin" ? "#A5A1FF" : "#5F5F88", fontSize: 16, cursor: "pointer"
+              }} title="Admin Panel">🛡️</button>
+            {user.picture
+              ? <img src={user.picture} alt={user.name} style={{ width: 32, height: 32, borderRadius: "50%" }} />
+              : <div style={{
+                  width: 32, height: 32, borderRadius: "50%", background: "#6C63FF",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 12, fontWeight: "bold"
+                }}>{(user.name ?? "U").substring(0, 1)}</div>
+            }
+            <span className="finwise-user-name" style={{ fontSize: 13, color: "var(--fw-text-secondary)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user.name}
+            </span>
+            <button data-testid="desktop-logout-btn" onClick={onLogout} style={{
+              background: "#FFF1F2", border: "1px solid #FECACA", borderRadius: 6,
+              padding: "6px 14px", color: "#E24B4B", fontSize: 12, fontWeight: 500, cursor: "pointer"
+            }}>Logout</button>
+          </div>
+
+          {/* Hamburger — mobile only */}
           <button
-            onClick={toggleTheme}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            className="finwise-nav-hamburger"
+            aria-label="Toggle navigation menu"
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(prev => !prev)}
             style={{
-              background: "transparent",
-              border: "1px solid var(--fw-border)",
-              borderRadius: 6,
-              padding: "5px 9px",
-              color: "var(--fw-text-secondary)",
-              fontSize: 15,
-              cursor: "pointer",
-              lineHeight: 1,
+              display: "none", background: "none", border: "1px solid var(--fw-border)",
+              borderRadius: 6, padding: "6px 10px", color: "var(--fw-text-secondary)",
+              fontSize: 20, lineHeight: 1, cursor: "pointer"
             }}
-          >
-            {theme === "dark" ? "☀️" : "🌙"}
-          </button>
-          <button
-            onClick={() => { setActiveTab("admin"); setEvaluateMode(false); setShowFinancialMenu(false); }}
-            style={{
-              background: activeTab === "admin" ? "var(--fw-nav-active-bg)" : "transparent",
-              border: "none",
-              borderRadius: 6,
-              padding: "6px 10px",
-              color: activeTab === "admin" ? "#A5A1FF" : "#5F5F88",
-              fontSize: 16,
-              cursor: "pointer"
-            }}
-            title="Admin Panel"
-          >
-            🛡️
-          </button>
-          {user.picture ? (
-            <img src={user.picture} alt={user.name} style={{ width: 32, height: 32, borderRadius: "50%" }} />
-          ) : (
-            <div style={{
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              background: "#6C63FF",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              fontWeight: "bold"
-            }}>
-              {user.name.substring(0, 1)}
-            </div>
-          )}
-          <span className="finwise-user-name" style={{ fontSize: 13, color: "var(--fw-text-secondary)", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {user.name}
-          </span>
-          <button
-            onClick={onLogout}
-            style={{
-              background: "#FFF1F2",
-              border: "1px solid #FECACA",
-              borderRadius: 6,
-              padding: "6px 14px",
-              color: "#E24B4B",
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: "pointer"
-            }}
-          >
-            Logout
-          </button>
+          >{mobileNavOpen ? "✕" : "☰"}</button>
         </div>
       </nav>
 
@@ -744,6 +772,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
           </div>
           <div className="finwise-stepper-actions" style={{ display: "flex", gap: 8 }}>
             <button
+              type="button"
               onClick={exitEvaluateFlow}
               style={{
                 background: "transparent",
@@ -759,6 +788,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
             </button>
             {evaluateStep > 1 && (
               <button
+                type="button"
                 onClick={prevEvaluateStep}
                 style={{
                   background: "var(--fw-nav-active-bg)",
@@ -776,6 +806,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
             )}
             {evaluateStep < 4 ? (
               <button
+                type="button"
                 onClick={nextEvaluateStep}
                 style={{
                   background: "linear-gradient(90deg, #6C63FF, #4D33FF)",
@@ -792,6 +823,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
               </button>
             ) : (
               <button
+                type="button"
                 onClick={exitEvaluateFlow}
                 style={{
                   background: "linear-gradient(90deg, #2EAF7D, #1A8A58)",
@@ -1795,6 +1827,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
 
           {/* TAB 4: FINANCIAL DATA CAPTURE */}
           {activeTab === "financial" && (
+            <ErrorBoundary fallback="Financial data failed to render. This may be caused by outdated saved data — please refresh the page.">
             <form onSubmit={handleSaveFinancial} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               <div style={{
                 display: "grid",
@@ -2051,65 +2084,191 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                 </div>
               </div>
 
-              {/* Monthly commitments card */}
-              <div style={{
-                background: "var(--fw-bg-card)",
-                border: "1px solid var(--fw-border)",
-                borderRadius: 14,
-                padding: 28,
-                display: "flex",
-                flexDirection: "column",
-                gap: 16
-              }}>
-                <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Monthly Financial Flows & Expenditures</h3>
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                  gap: 20
-                }}>
+              {/* Income Section */}
+              <div style={{ background: "var(--fw-bg-card)", border: "1px solid var(--fw-border)", borderRadius: 14, padding: 28, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <h3 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 4px" }}>Income</h3>
+                  <p style={{ color: "var(--fw-text-secondary)", fontSize: 12, margin: 0 }}>Enter annual gross income. Family income is optional and only applies if there are additional earners in the household.</p>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 20 }}>
                   <div>
-                    <label style={{ display: "block", fontSize: 12, color: "var(--fw-text-secondary)", marginBottom: 6 }}>Monthly Savings ($)</label>
+                    <label htmlFor="primary-yearly-income" style={{ display: "block", fontSize: 12, color: "var(--fw-text-secondary)", marginBottom: 6 }}>Primary Yearly Income ($) <span style={{ color: "#E24B4B" }}>*</span></label>
                     <input
+                      id="primary-yearly-income"
                       type="number"
-                      value={financialData.monthlySavings}
-                      onChange={(e) => setFinancialData({ ...financialData, monthlySavings: Number(e.target.value) })}
-                      style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13 }}
-                      required
+                      min={0}
+                      value={financialData.primaryYearlyIncome}
+                      onChange={(e) => setFinancialData(prev => ({ ...prev, primaryYearlyIncome: Number(e.target.value) }))}
+                      style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13, boxSizing: "border-box" }}
                     />
                   </div>
+                  <div>
+                    <label htmlFor="family-yearly-income" style={{ display: "block", fontSize: 12, color: "var(--fw-text-secondary)", marginBottom: 6 }}>Family / Household Yearly Income ($) <span style={{ color: "var(--fw-text-muted)" }}>(optional)</span></label>
+                    <input
+                      id="family-yearly-income"
+                      type="number"
+                      min={0}
+                      value={financialData.familyYearlyIncome}
+                      onChange={(e) => setFinancialData(prev => ({ ...prev, familyYearlyIncome: Number(e.target.value) }))}
+                      style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13, boxSizing: "border-box" }}
+                    />
+                  </div>
+                </div>
+                {(financialData.primaryYearlyIncome > 0 || financialData.familyYearlyIncome > 0) && (
+                  <div style={{ display: "flex", justifyContent: "flex-end", borderTop: "1px solid var(--fw-border)", paddingTop: 12 }}>
+                    <span style={{ fontSize: 13, color: "var(--fw-text-secondary)", marginRight: 12 }}>Combined Yearly Income</span>
+                    <span style={{ fontSize: 16, fontWeight: 700, color: "#2EAF7D" }}>
+                      ${(financialData.primaryYearlyIncome + financialData.familyYearlyIncome).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
 
+              {/* Expenditures Section */}
+              <div style={{ background: "var(--fw-bg-card)", border: "1px solid var(--fw-border)", borderRadius: 14, padding: 28, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
-                    <label style={{ display: "block", fontSize: 12, color: "var(--fw-text-secondary)", marginBottom: 6 }}>Monthly Credit Card Bills ($)</label>
-                    <input
-                      type="number"
-                      value={financialData.monthlyCreditCardBills}
-                      onChange={(e) => setFinancialData({ ...financialData, monthlyCreditCardBills: Number(e.target.value) })}
-                      style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13 }}
-                      required
-                    />
+                    <h3 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 4px" }}>Monthly Expenditures</h3>
+                    <p style={{ color: "var(--fw-text-secondary)", fontSize: 12, margin: 0 }}>Add each recurring monthly bill. Defaults to credit card bill — add more as needed.</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={addExpenditure}
+                    style={{ background: "var(--fw-nav-active-bg)", color: "#A5A1FF", border: "1px solid #C7D2FE", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >+ Add Expenditure</button>
+                </div>
+                <div className="finwise-table-wrap">
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--fw-border)", textAlign: "left" }}>
+                        <th style={{ padding: "8px 10px", color: "var(--fw-text-secondary)", fontWeight: 500, width: 170 }}>Type</th>
+                        <th style={{ padding: "8px 10px", color: "var(--fw-text-secondary)", fontWeight: 500 }}>Description</th>
+                        <th style={{ padding: "8px 10px", color: "var(--fw-text-secondary)", fontWeight: 500, width: 130, textAlign: "right" }}>Monthly ($)</th>
+                        <th style={{ padding: "8px", width: 40 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(financialData.expenditures ?? []).map((exp, idx) => (
+                        <tr key={idx} style={{ borderBottom: "1px solid var(--fw-border)" }}>
+                          <td style={{ padding: "6px 10px" }}>
+                            <select
+                              value={exp.type}
+                              onChange={(e) => updateExpenditure(idx, "type", e.target.value)}
+                              style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 6, padding: "6px 8px", color: "var(--fw-text-primary)", fontSize: 12 }}
+                            >
+                              <option value="credit_card">Credit Card Bill</option>
+                              <option value="insurance">Insurance Bill</option>
+                              <option value="other">Other Monthly Bill</option>
+                            </select>
+                          </td>
+                          <td style={{ padding: "6px 10px" }}>
+                            <input
+                              type="text"
+                              placeholder="e.g. Visa Platinum"
+                              value={exp.description}
+                              onChange={(e) => updateExpenditure(idx, "description", e.target.value)}
+                              style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 6, padding: "6px 8px", color: "var(--fw-text-primary)", fontSize: 12, boxSizing: "border-box" }}
+                            />
+                          </td>
+                          <td style={{ padding: "6px 10px" }}>
+                            <input
+                              type="number"
+                              min={0}
+                              value={exp.monthlyAmount}
+                              onChange={(e) => updateExpenditure(idx, "monthlyAmount", Number(e.target.value))}
+                              style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 6, padding: "6px 8px", color: "var(--fw-text-primary)", fontSize: 12, textAlign: "right", boxSizing: "border-box" }}
+                            />
+                          </td>
+                          <td style={{ padding: "6px", textAlign: "center" }}>
+                            {(financialData.expenditures ?? []).length > 1 && (
+                              <button type="button" onClick={() => removeExpenditure(idx)} style={{ background: "transparent", border: "none", color: "#E24B4B", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--fw-border)", paddingTop: 12 }}>
+                  <span style={{ fontSize: 13, color: "var(--fw-text-secondary)" }}>Total Monthly Expenditure</span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: "#E24B4B" }}>
+                    ${(financialData.expenditures ?? []).reduce((s, e) => s + (e.monthlyAmount || 0), 0).toLocaleString()}/mo
+                  </span>
+                </div>
+              </div>
 
+              {/* Savings Section */}
+              <div style={{ background: "var(--fw-bg-card)", border: "1px solid var(--fw-border)", borderRadius: 14, padding: 28, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
-                    <label style={{ display: "block", fontSize: 12, color: "var(--fw-text-secondary)", marginBottom: 6 }}>Monthly Insurance Expenses ($)</label>
-                    <input
-                      type="number"
-                      value={financialData.insuranceExpenses}
-                      onChange={(e) => setFinancialData({ ...financialData, insuranceExpenses: Number(e.target.value) })}
-                      style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13 }}
-                      required
-                    />
+                    <h3 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 4px" }}>Monthly Savings</h3>
+                    <p style={{ color: "var(--fw-text-secondary)", fontSize: 12, margin: 0 }}>Add each savings or retirement contribution. Defaults to 401(k) — add more as needed.</p>
                   </div>
-
-                  <div>
-                    <label style={{ display: "block", fontSize: 12, color: "var(--fw-text-secondary)", marginBottom: 6 }}>Other Recurring Commitments ($)</label>
-                    <input
-                      type="number"
-                      value={financialData.otherRecurringCommitments}
-                      onChange={(e) => setFinancialData({ ...financialData, otherRecurringCommitments: Number(e.target.value) })}
-                      style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13 }}
-                      required
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={addSaving}
+                    style={{ background: "var(--fw-nav-active-bg)", color: "#A5A1FF", border: "1px solid #C7D2FE", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >+ Add Saving</button>
+                </div>
+                <div className="finwise-table-wrap">
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--fw-border)", textAlign: "left" }}>
+                        <th style={{ padding: "8px 10px", color: "var(--fw-text-secondary)", fontWeight: 500, width: 170 }}>Type</th>
+                        <th style={{ padding: "8px 10px", color: "var(--fw-text-secondary)", fontWeight: 500 }}>Description</th>
+                        <th style={{ padding: "8px 10px", color: "var(--fw-text-secondary)", fontWeight: 500, width: 150, textAlign: "right" }}>Monthly Contribution ($)</th>
+                        <th style={{ padding: "8px", width: 40 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(financialData.savings ?? []).map((sav, idx) => (
+                        <tr key={idx} style={{ borderBottom: "1px solid var(--fw-border)" }}>
+                          <td style={{ padding: "6px 10px" }}>
+                            <select
+                              value={sav.type}
+                              onChange={(e) => updateSaving(idx, "type", e.target.value)}
+                              style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 6, padding: "6px 8px", color: "var(--fw-text-primary)", fontSize: 12 }}
+                            >
+                              <option value="401k">401(k) / Employer Plan</option>
+                              <option value="ira">IRA (Traditional / Roth)</option>
+                              <option value="emergency">Emergency Fund</option>
+                              <option value="investment">Investment Account</option>
+                              <option value="other">Other Savings</option>
+                            </select>
+                          </td>
+                          <td style={{ padding: "6px 10px" }}>
+                            <input
+                              type="text"
+                              placeholder="e.g. Employer 401k match"
+                              value={sav.description}
+                              onChange={(e) => updateSaving(idx, "description", e.target.value)}
+                              style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 6, padding: "6px 8px", color: "var(--fw-text-primary)", fontSize: 12, boxSizing: "border-box" }}
+                            />
+                          </td>
+                          <td style={{ padding: "6px 10px" }}>
+                            <input
+                              type="number"
+                              min={0}
+                              value={sav.monthlyContribution}
+                              onChange={(e) => updateSaving(idx, "monthlyContribution", Number(e.target.value))}
+                              style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 6, padding: "6px 8px", color: "var(--fw-text-primary)", fontSize: 12, textAlign: "right", boxSizing: "border-box" }}
+                            />
+                          </td>
+                          <td style={{ padding: "6px", textAlign: "center" }}>
+                            {(financialData.savings ?? []).length > 1 && (
+                              <button type="button" onClick={() => removeSaving(idx)} style={{ background: "transparent", border: "none", color: "#E24B4B", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--fw-border)", paddingTop: 12 }}>
+                  <span style={{ fontSize: 13, color: "var(--fw-text-secondary)" }}>Total Monthly Savings</span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: "#2EAF7D" }}>
+                    ${(financialData.savings ?? []).reduce((s, sv) => s + (sv.monthlyContribution || 0), 0).toLocaleString()}/mo
+                  </span>
                 </div>
               </div>
 
@@ -2132,6 +2291,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                 {loading ? "Saving Records..." : "Save Financial Portfolio"}
               </button>
             </form>
+            </ErrorBoundary>
           )}
 
           {/* TAB 5: SPENDWISE STATEMENT UPLOADER */}

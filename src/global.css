@@ -134,6 +134,62 @@
   background: var(--fw-nav-active-bg);
 }
 
+/* ── Mobile nav hamburger ── */
+.fw-nav-hamburger {
+  display: none;
+  background: none;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-sm);
+  padding: 6px 10px;
+  color: var(--fw-text-secondary);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .fw-nav-hamburger {
+    display: flex;
+    align-items: center;
+  }
+
+  .fw-nav-links {
+    display: none;
+    position: fixed;
+    top: 64px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    background: var(--fw-bg-nav);
+    border-bottom: 1px solid var(--fw-border);
+    box-shadow: var(--fw-shadow-md);
+    padding: 12px 16px 16px;
+    gap: 6px;
+    z-index: 9999;
+  }
+
+  .fw-nav-links.open {
+    display: flex;
+  }
+
+  .fw-nav-btn {
+    width: 100%;
+    text-align: left;
+  }
+
+  .fw-nav-dropdown {
+    width: 100%;
+  }
+
+  .fw-nav-dropdown-menu {
+    position: static;
+    box-shadow: none;
+    border-radius: 8px;
+    min-width: unset;
+    margin-top: 4px;
+  }
+}
+
 /* ── Buttons ── */
 .fw-btn-primary {
   background: var(--fw-accent-gradient);
@@ -951,6 +1007,39 @@
 
 .ip-bold { color: var(--fw-accent); font-weight: 600; }
 .ip-em   { color: var(--fw-text-secondary); }
+
+/* ── Home nav: desktop base styles ── */
+.finwise-nav-hamburger { display: none; }
+.finwise-mobile-user-row { display: none; }
+.finwise-nav-links {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+.finwise-nav-btn-item {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+}
+.finwise-nav-dropdown-wrap { position: relative; }
+.finwise-nav-submenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 220px;
+  background: var(--fw-bg-card);
+  border: 1px solid var(--fw-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  z-index: 200;
+}
 
 /* ── Landing page layout ── */
 .landing-page {
