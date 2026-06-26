@@ -1,7 +1,5 @@
 #!/bin/sh
-# Replace $PORT placeholder in nginx config at runtime
-
-#!/bin/sh
+# Write runtime env vars so the SPA can read them from window.__ENV__
 cat <<EOF > /usr/share/nginx/html/config.js
 window.__ENV__ = {
   VITE_API_URL: "${VITE_API_URL}",
@@ -10,5 +8,4 @@ window.__ENV__ = {
 };
 EOF
 
-sed -i "s/\$PORT/${PORT:-3003}/g" /etc/nginx/conf.d/default.conf
 exec nginx -g "daemon off;"

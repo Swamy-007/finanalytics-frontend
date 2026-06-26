@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci
 
 COPY . .
 
@@ -18,6 +18,10 @@ COPY --from=build /app/dist /usr/share/nginx/html
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 EXPOSE 8080
 
-CMD ["nginx", "-g", "daemon off;"]
+# entrypoint substitutes $PORT in nginx.conf at runtime before starting nginx
+CMD ["/docker-entrypoint.sh"]
