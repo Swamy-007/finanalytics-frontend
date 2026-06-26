@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Home from './Home';
 import axios from 'axios';
 
@@ -8,6 +8,8 @@ vi.mock('axios', () => ({
     get: vi.fn(),
     put: vi.fn(),
     post: vi.fn(),
+    isAxiosError: (err: unknown): boolean =>
+      typeof err === 'object' && err !== null && (err as Record<string, unknown>)['isAxiosError'] === true,
   }
 }));
 
@@ -74,13 +76,13 @@ describe('Home – top navbar', () => {
 
   it('renders Logout button', () => {
     render(<Home user={mockUser} />);
-    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument();
+    expect(screen.getByTestId('desktop-logout-btn')).toBeInTheDocument();
   });
 
   it('calls onLogout when Logout is clicked', () => {
     const onLogout = vi.fn();
     render(<Home user={mockUser} onLogout={onLogout} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
+    fireEvent.click(screen.getByTestId('desktop-logout-btn'));
     expect(onLogout).toHaveBeenCalledOnce();
   });
 
@@ -105,7 +107,7 @@ describe('Home – top navbar', () => {
 
   it('clicking admin icon navigates to admin panel', () => {
     render(<Home user={mockUser} />);
-    fireEvent.click(screen.getByTitle('Admin Panel'));
+    fireEvent.click(screen.getByTestId('desktop-admin-btn'));
     expect(screen.getByRole('heading', { level: 2, name: 'Administrative System Analytics' })).toBeInTheDocument();
   });
 });
@@ -239,5 +241,263 @@ describe('Home – Evaluate Financials wizard', () => {
     startWizard();
     fireEvent.click(screen.getByRole('button', { name: 'Home' }));
     expect(screen.queryByRole('button', { name: 'Exit Wizard' })).not.toBeInTheDocument();
+  });
+});
+
+// ─── helpers shared by financial-data tests ────────────────────────────────
+const goToStep2 = () => {
+  const btn = screen.getByRole('button', { name: /Financial AI Solutions/i });
+  fireEvent.mouseEnter(btn.closest('div')!);
+  fireEvent.click(screen.getByRole('button', { name: /Evaluate Financials/i }));
+  fireEvent.click(screen.getByRole('button', { name: /Next →/i })); // step 1 → 2
+};
+
+describe('Home – Financial Data step (step 2)', () => {
+  beforeEach(() => {
+    vi.mocked(axios.get).mockImplementation((url: unknown) => {
+      if (typeof url === 'string' && url.includes('/api/cases')) return Promise.resolve({ data: [] });
+      if (typeof url === 'string' && url.includes('/api/admin')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: null });
+    });
+    vi.mocked(axios.put).mockResolvedValue({ data: {} });
+    vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  // ── Page presence ──────────────────────────────────────────────────────────
+  it('navigating to step 2 shows Asset & Liability Manager heading', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByRole('heading', { level: 2, name: 'Asset & Liability Manager' })).toBeInTheDocument();
+  });
+
+  it('step 2 shows Income section heading', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByRole('heading', { level: 3, name: 'Income' })).toBeInTheDocument();
+  });
+
+  it('step 2 shows Monthly Expenditures section heading', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByRole('heading', { level: 3, name: 'Monthly Expenditures' })).toBeInTheDocument();
+  });
+
+  it('step 2 shows Monthly Savings section heading', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByRole('heading', { level: 3, name: 'Monthly Savings' })).toBeInTheDocument();
+  });
+
+  it('Primary Yearly Income input is present', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByLabelText(/Primary Yearly Income/i)).toBeInTheDocument();
+  });
+
+  it('Family Yearly Income input is present', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByLabelText(/Family \/ Household Yearly Income/i)).toBeInTheDocument();
+  });
+
+  // ── Income fields ──────────────────────────────────────────────────────────
+  it('entering primary yearly income updates the value', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    const input = screen.getByLabelText(/Primary Yearly Income/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '80000' } });
+    expect(input.value).toBe('80000');
+  });
+
+  it('shows combined yearly income when both income fields are filled', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.change(screen.getByLabelText(/Primary Yearly Income/i), { target: { value: '80000' } });
+    fireEvent.change(screen.getByLabelText(/Family \/ Household Yearly Income/i), { target: { value: '40000' } });
+    expect(screen.getByText(/\$120,000/)).toBeInTheDocument();
+  });
+
+  // ── Expenditure table ──────────────────────────────────────────────────────
+  it('shows one expenditure row by default (credit card bill)', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    const selects = screen.getAllByDisplayValue('Credit Card Bill');
+    expect(selects.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Add Expenditure button appends a new expenditure row', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    const before = screen.getAllByDisplayValue('Credit Card Bill').length;
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Expenditure/i }));
+    expect(screen.getAllByDisplayValue('Credit Card Bill').length).toBe(before + 1);
+  });
+
+  it('expenditure type dropdown can be changed to Insurance Bill', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    const select = screen.getAllByDisplayValue('Credit Card Bill')[0] as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'insurance' } });
+    expect((select as HTMLSelectElement).value).toBe('insurance');
+  });
+
+  it('remove button (×) is absent when only one expenditure row exists', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    // Only 1 row → no × button in the expenditure table
+    // Both expenditure and savings have 1 default row; count × buttons in expenditure area
+    // The × buttons use aria-label-less "×" text — count all visible × buttons
+    const removeButtons = screen.queryAllByRole('button', { name: '×' });
+    // With 1 expenditure row and 1 savings row, neither should show × (guarded by length > 1)
+    expect(removeButtons.length).toBe(0);
+  });
+
+  it('remove button (×) appears after adding a second expenditure row', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Expenditure/i }));
+    const removeButtons = screen.getAllByRole('button', { name: '×' });
+    expect(removeButtons.length).toBeGreaterThanOrEqual(2); // 2 expenditure rows
+  });
+
+  it('clicking × on expenditure row removes it', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Expenditure/i }));
+    const before = screen.getAllByDisplayValue('Credit Card Bill').length;
+    const firstRemove = screen.getAllByRole('button', { name: '×' })[0];
+    fireEvent.click(firstRemove);
+    expect(screen.getAllByDisplayValue('Credit Card Bill').length).toBe(before - 1);
+  });
+
+  // ── Savings table ──────────────────────────────────────────────────────────
+  it('shows one savings row by default (401k)', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByDisplayValue('401(k) / Employer Plan')).toBeInTheDocument();
+  });
+
+  it('Add Saving button appends a new savings row', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    const before = screen.getAllByDisplayValue('401(k) / Employer Plan').length;
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Saving/i }));
+    expect(screen.getAllByDisplayValue('401(k) / Employer Plan').length).toBe(before + 1);
+  });
+
+  it('savings type dropdown can be changed to IRA', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    const select = screen.getByDisplayValue('401(k) / Employer Plan') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'ira' } });
+    expect(select.value).toBe('ira');
+  });
+
+  it('clicking × on savings row removes it', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Saving/i }));
+    const removeButtons = screen.getAllByRole('button', { name: '×' });
+    const before = screen.getAllByDisplayValue('401(k) / Employer Plan').length;
+    fireEvent.click(removeButtons[removeButtons.length - 1]); // last × is in savings
+    expect(screen.getAllByDisplayValue('401(k) / Employer Plan').length).toBe(before - 1);
+  });
+
+  // ── Next button navigation ─────────────────────────────────────────────────
+  it('Next → button is present on step 2', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByRole('button', { name: /Next →/i })).toBeInTheDocument();
+  });
+
+  it('Next → from step 2 navigates to step 3 (AI Analysis / health tab)', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.click(screen.getByRole('button', { name: /Next →/i }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Financial AI Audit Dashboard' })).toBeInTheDocument();
+  });
+
+  it('Next → from step 2 works even when income fields are 0 (not required to fill before advancing)', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    // Primary income is still 0 (default) — Next should still work
+    const incomeInput = screen.getByLabelText(/Primary Yearly Income/i) as HTMLInputElement;
+    expect(incomeInput.value).toBe('0');
+    fireEvent.click(screen.getByRole('button', { name: /Next →/i }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Financial AI Audit Dashboard' })).toBeInTheDocument();
+  });
+
+  it('← Back from step 3 returns to step 2 (financial data)', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.click(screen.getByRole('button', { name: /Next →/i })); // step 2 → 3
+    fireEvent.click(screen.getByRole('button', { name: /← Back/i })); // step 3 → 2
+    expect(screen.getByRole('heading', { level: 2, name: 'Asset & Liability Manager' })).toBeInTheDocument();
+  });
+
+  // ── Save Financial Portfolio ────────────────────────────────────────────────
+  it('Save Financial Portfolio button is present on step 2', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByRole('button', { name: /Save Financial Portfolio/i })).toBeInTheDocument();
+  });
+
+  it('Save Financial Portfolio posts data to /api/financial-data', async () => {
+    vi.mocked(axios.post).mockResolvedValue({
+      data: {
+        assets: [], liabilities: [],
+        primaryYearlyIncome: 80000, familyYearlyIncome: 0,
+        expenditures: [{ type: 'credit_card', description: '', monthlyAmount: 500 }],
+        savings: [{ type: '401k', description: '', monthlyContribution: 200 }],
+      }
+    });
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.change(screen.getByLabelText(/Primary Yearly Income/i), { target: { value: '80000' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Financial Portfolio/i }));
+    await waitFor(() => {
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+        expect.stringContaining('/api/financial-data'),
+        expect.objectContaining({ primaryYearlyIncome: 80000 }),
+        expect.any(Object)
+      );
+    });
+  });
+
+  it('shows success message after saving financial data', async () => {
+    vi.mocked(axios.post).mockResolvedValue({
+      data: { assets: [], liabilities: [], primaryYearlyIncome: 0, familyYearlyIncome: 0, expenditures: [], savings: [] }
+    });
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.click(screen.getByRole('button', { name: /Save Financial Portfolio/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Financial profile saved successfully/i)).toBeInTheDocument();
+    });
+  });
+
+  it('shows error message when saving financial data fails', async () => {
+    vi.mocked(axios.post).mockRejectedValue({ isAxiosError: true, response: { data: { error: 'Server error' } } });
+    render(<Home user={mockUser} />);
+    goToStep2();
+    fireEvent.click(screen.getByRole('button', { name: /Save Financial Portfolio/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Server error/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Total summaries ────────────────────────────────────────────────────────
+  it('shows total monthly expenditure sum at bottom of expenditure section', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    // Default row has monthlyAmount = 0, so total should show $0/mo
+    expect(screen.getByText(/Total Monthly Expenditure/i)).toBeInTheDocument();
+  });
+
+  it('shows total monthly savings sum at bottom of savings section', () => {
+    render(<Home user={mockUser} />);
+    goToStep2();
+    expect(screen.getByText(/Total Monthly Savings/i)).toBeInTheDocument();
   });
 });

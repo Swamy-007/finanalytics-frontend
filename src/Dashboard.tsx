@@ -116,7 +116,13 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {data && (
+      {data && data.transactions.length === 0 && (
+        <div className="fw-alert-error fw-alert-left-bar">
+          <p>⚠ The AI could not extract transactions from this file. The statement may be image-based, password-protected, or the AI service may be unavailable. Please try again or contact support.</p>
+        </div>
+      )}
+
+      {data && data.transactions.length > 0 && (
         <>
           <div className="fw-badge-success">
             <div className="fw-dot-success" />

@@ -79,14 +79,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   const [regPassword, setRegPassword] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
   const [regLoading, setRegLoading] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const apiUrl = import.meta.env.VITE_API_URL as string;
+
+  const closeMobileMenu = () => setMobileMenuOpen(false);
 
   const openAuth = () => {
     setAuthError("");
     setAuthSuccess("");
     setShowAuthModal(true);
     setShowDropdown(false);
+    setMobileMenuOpen(false);
   };
 
   const closeAuth = () => {
@@ -182,10 +186,19 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        <div className="fw-nav-links">
+        <button
+          className="fw-nav-hamburger"
+          aria-label="Toggle navigation menu"
+          aria-expanded={mobileMenuOpen}
+          onClick={() => setMobileMenuOpen(prev => !prev)}
+        >
+          {mobileMenuOpen ? "✕" : "☰"}
+        </button>
+
+        <div className={`fw-nav-links${mobileMenuOpen ? " open" : ""}`}>
           <button
             className={`fw-nav-btn${activeSection === "home" ? " active" : ""}`}
-            onClick={() => setActiveSection("home")}
+            onClick={() => { setActiveSection("home"); closeMobileMenu(); }}
           >
             Home
           </button>
@@ -196,7 +209,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             onMouseLeave={() => setShowDropdown(false)}
           >
             <button className="fw-nav-btn" onClick={openAuth}>AI Solutions ▾</button>
-            {showDropdown && (
+            {(showDropdown || mobileMenuOpen) && (
               <div className="fw-nav-dropdown-menu">
                 <button className="fw-nav-dropdown-item" onClick={openAuth}>
                   📊 Evaluate Financials
@@ -213,7 +226,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
           <button
             className={`fw-nav-btn${activeSection === "contact" ? " active" : ""}`}
-            onClick={() => setActiveSection("contact")}
+            onClick={() => { setActiveSection("contact"); closeMobileMenu(); }}
           >
             Contact Us
           </button>
