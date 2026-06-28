@@ -16,6 +16,7 @@ type User = {
 
 interface LandingPageProps {
   onLogin: (user: User) => void;
+  sessionMsg?: string | null;
 }
 
 type AuthMode = "login" | "register";
@@ -62,7 +63,7 @@ const FEATURES = [
   }
 ];
 
-const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
+const LandingPage: React.FC<LandingPageProps> = ({ onLogin, sessionMsg }) => {
   const { theme, toggleTheme } = useTheme();
   const [activeSection, setActiveSection] = useState<"home" | "contact">("home");
   const [showDropdown, setShowDropdown] = useState(false);
@@ -176,6 +177,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
   return (
     <div className="landing-page">
+      {sessionMsg && (
+        <div className="fw-session-banner">⚠ {sessionMsg}</div>
+      )}
       {/* ── Navbar ── */}
       <nav className="fw-nav">
         <div className="fw-nav-brand">

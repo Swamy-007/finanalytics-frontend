@@ -38,6 +38,9 @@ vi.mock("axios", () => ({
     get: vi.fn().mockResolvedValue({ data: {} }),
     post: vi.fn().mockResolvedValue({ data: { name: "Mobile User", email: "mobile@example.com", sessionToken: "tok" } }),
     isAxiosError: vi.fn().mockReturnValue(false),
+    interceptors: {
+      response: { use: vi.fn().mockReturnValue(1), eject: vi.fn() },
+    },
   },
 }));
 

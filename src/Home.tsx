@@ -233,6 +233,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
   const [showFinancialMenu, setShowFinancialMenu] = useState<boolean>(false);
   const [evaluateMode, setEvaluateMode] = useState<boolean>(false);
   const [mobileNavOpen, setMobileNavOpen] = useState<boolean>(false);
+  const [refreshingCases, setRefreshingCases] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
   const closeMobileNav = () => setMobileNavOpen(false);
   const [evaluateStep, setEvaluateStep] = useState<number>(1);
@@ -285,14 +287,33 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
     }
   }, [getAxiosConfig]);
 
-  // Load user data on mount
+  const handleRefreshCases = async () => {
+    console.log('[Refresh Offers] User clicked Refresh Offers at', new Date().toISOString());
+    setRefreshingCases(true);
+    setError(null);
+    try {
+      const res = await axios.get<Case[]>(`${apiUrl}/api/cases`, getAxiosConfig());
+      setCases(res.data);
+      console.log('[Refresh Offers] Fetched', res.data.length, 'case(s)');
+    } catch (err) {
+      console.error('[Refresh Offers] Failed to refresh cases:', err);
+      setError(axios.isAxiosError(err) ? err.response?.data?.error || 'Failed to refresh offers.' : 'Failed to refresh offers.');
+    } finally {
+      setRefreshingCases(false);
+    }
+  };
+
+  // Load user data on mount + sync login to Google Sheets (non-fatal)
   useEffect(() => {
     (async () => {
+      axios.post<{ ok: boolean; isAdmin?: boolean }>(`${apiUrl}/api/auth/sync`, {}, getAxiosConfig())
+        .then(res => { if (res.data.isAdmin) setIsAdmin(true); })
+        .catch(err => console.warn("[auth/sync] login sync failed (non-fatal):", err?.message));
       await fetchProfile();
       await fetchFinancialData();
       await fetchCases();
     })();
-  }, [fetchProfile, fetchFinancialData, fetchCases]);
+  }, [fetchProfile, fetchFinancialData, fetchCases, getAxiosConfig]);
 
   useEffect(() => {
     if (activeTab !== "admin") return;
@@ -309,8 +330,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
   }, [activeTab, getAxiosConfig]);
 
   // Handle Saves
-  const handleSaveProfile = async (e: { preventDefault(): void }) => {
-    e.preventDefault();
+  const handleSaveProfile = async (e?: { preventDefault(): void }): Promise<boolean> => {
+    e?.preventDefault();
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
@@ -318,15 +339,17 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       const res = await axios.put(`${apiUrl}/api/users/profile`, profile, getAxiosConfig());
       setProfile(res.data);
       setSuccessMsg("Personal profile saved successfully!");
+      return true;
     } catch (err) {
       setError(axios.isAxiosError(err) ? err.response?.data?.error || "Failed to save profile" : "Failed to save profile");
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSaveFinancial = async (e: { preventDefault(): void }) => {
-    e.preventDefault();
+  const handleSaveFinancial = async (e?: { preventDefault(): void }): Promise<boolean> => {
+    e?.preventDefault();
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
@@ -334,15 +357,17 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
       const res = await axios.post(`${apiUrl}/api/financial-data`, financialData, getAxiosConfig());
       setFinancialData(res.data);
       setSuccessMsg("Financial profile saved successfully!");
+      return true;
     } catch (err) {
       setError(axios.isAxiosError(err) ? err.response?.data?.error || "Failed to save financial data" : "Failed to save financial data");
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
   // Run AI Financial Audit
-  const handleRunAnalysis = async () => {
+  const handleRunAnalysis = useCallback(async () => {
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
@@ -352,7 +377,6 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
         setAiAnalysis(res.data.aiAnalysis);
       }
       if (res.data.cases) {
-        // Reload enriched cases
         fetchCases();
       }
       setSuccessMsg("AI Audit completed successfully! New recommendations generated.");
@@ -361,7 +385,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [getAxiosConfig, fetchCases]);
 
   // Update Case Status
   const handleUpdateCaseStatus = async (caseId: string, status: "Accepted" | "Declined") => {
@@ -540,11 +564,20 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
     setActiveTab("health");
   };
 
-  const nextEvaluateStep = () => {
-    if (evaluateStep === 1) { setEvaluateStep(2); setActiveTab("financial"); }
-    else if (evaluateStep === 2) { setEvaluateStep(3); setActiveTab("health"); }
-    else if (evaluateStep === 3) { setEvaluateStep(4); setActiveTab("recommendations"); }
-    else { exitEvaluateFlow(); }
+  const nextEvaluateStep = async () => {
+    if (evaluateStep === 1) {
+      const ok = await handleSaveProfile();
+      if (!ok) return;
+      setEvaluateStep(2); setActiveTab("financial");
+    } else if (evaluateStep === 2) {
+      const ok = await handleSaveFinancial();
+      if (!ok) return;
+      setEvaluateStep(3); setActiveTab("health");
+    } else if (evaluateStep === 3) {
+      setEvaluateStep(4); setActiveTab("recommendations");
+    } else {
+      exitEvaluateFlow();
+    }
   };
 
   const prevEvaluateStep = () => {
@@ -604,12 +637,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
         {/* Nav Links — hidden on mobile, visible on desktop */}
         <div className={`finwise-nav-links${mobileNavOpen ? " open" : ""}`}>
           <button
-            className="finwise-nav-btn-item"
+            className={`finwise-nav-btn-item${activeTab === "health" && !evaluateMode ? " active" : ""}`}
             onClick={() => { setActiveTab("health"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}
-            style={{
-              background: activeTab === "health" && !evaluateMode ? "var(--fw-nav-active-bg)" : "transparent",
-              color: activeTab === "health" && !evaluateMode ? "#A5A1FF" : "#FFFFFF",
-            }}
           >Home</button>
 
           <div
@@ -617,40 +646,22 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
             onMouseEnter={() => setShowFinancialMenu(true)}
             onMouseLeave={() => setShowFinancialMenu(false)}
           >
-            <button className="finwise-nav-btn-item" style={{
-              background: evaluateMode || activeTab === "upload" || activeTab === "stocks" ? "var(--fw-nav-active-bg)" : "transparent",
-              color: evaluateMode || activeTab === "upload" || activeTab === "stocks" ? "#A5A1FF" : "#FFFFFF",
-              display: "flex", alignItems: "center", gap: 6,
-            }}>
+            <button className={`finwise-nav-btn-item${evaluateMode || activeTab === "upload" || activeTab === "stocks" ? " active" : ""}`}
+              style={{ display: "flex", alignItems: "center", gap: 6 }}>
               Financial AI Solutions ▾
             </button>
             {(showFinancialMenu || mobileNavOpen) && (
               <div className="finwise-nav-submenu">
-                <button onClick={() => { startEvaluateFlow(); closeMobileNav(); }} style={{
-                  display: "block", width: "100%", background: "transparent", border: "none",
-                  borderBottom: "1px solid var(--fw-border)", padding: "12px 16px",
-                  color: "#FFFFFF", fontSize: 14, fontWeight: 500, cursor: "pointer", textAlign: "left"
-                }}>📊 Evaluate Financials</button>
-                <button onClick={() => { setActiveTab("upload"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }} style={{
-                  display: "block", width: "100%", background: "transparent", border: "none",
-                  borderBottom: "1px solid var(--fw-border)", padding: "12px 16px",
-                  color: "#FFFFFF", fontSize: 14, fontWeight: 500, cursor: "pointer", textAlign: "left"
-                }}>💳 Credit Card Analyzer</button>
-                <button onClick={() => { setActiveTab("stocks"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }} style={{
-                  display: "block", width: "100%", background: "transparent", border: "none",
-                  padding: "12px 16px", color: "#FFFFFF", fontSize: 14, fontWeight: 500, cursor: "pointer", textAlign: "left"
-                }}>📈 Your Stocks Analyzer</button>
+                <button className="finwise-nav-submenu-btn" onClick={() => { startEvaluateFlow(); closeMobileNav(); }}>📊 Evaluate Financials</button>
+                <button className="finwise-nav-submenu-btn" onClick={() => { setActiveTab("upload"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}>💳 Credit Card Analyzer</button>
+                <button className="finwise-nav-submenu-btn" onClick={() => { setActiveTab("stocks"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}>📈 Your Stocks Analyzer</button>
               </div>
             )}
           </div>
 
           <button
-            className="finwise-nav-btn-item"
+            className={`finwise-nav-btn-item${activeTab === "contact" ? " active" : ""}`}
             onClick={() => { setActiveTab("contact"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}
-            style={{
-              background: activeTab === "contact" ? "var(--fw-nav-active-bg)" : "transparent",
-              color: activeTab === "contact" ? "#A5A1FF" : "#FFFFFF",
-            }}
           >Contact Us</button>
 
           {/* Mobile-only: show user controls inside the menu */}
@@ -659,12 +670,12 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
               background: "transparent", border: "1px solid var(--fw-border)", borderRadius: 6,
               padding: "5px 9px", color: "var(--fw-text-secondary)", fontSize: 15, cursor: "pointer"
             }}>{theme === "dark" ? "☀️" : "🌙"}</button>
-            <button onClick={() => { setActiveTab("admin"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}
-              style={{
-                background: activeTab === "admin" ? "var(--fw-nav-active-bg)" : "transparent",
-                border: "none", borderRadius: 6, padding: "6px 10px",
-                color: activeTab === "admin" ? "#A5A1FF" : "#5F5F88", fontSize: 16, cursor: "pointer"
-              }} title="Admin Panel">🛡️</button>
+            {isAdmin && (
+              <button
+                className={`finwise-nav-admin-btn${activeTab === "admin" ? " active" : ""}`}
+                onClick={() => { setActiveTab("admin"); setEvaluateMode(false); setShowFinancialMenu(false); closeMobileNav(); }}
+                title="Admin Panel">🛡️</button>
+            )}
             <button onClick={onLogout} style={{
               background: "#FFF1F2", border: "1px solid #FECACA", borderRadius: 6,
               padding: "6px 14px", color: "#E24B4B", fontSize: 12, fontWeight: 500, cursor: "pointer"
@@ -681,14 +692,13 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                 background: "transparent", border: "1px solid var(--fw-border)", borderRadius: 6,
                 padding: "5px 9px", color: "var(--fw-text-secondary)", fontSize: 15, cursor: "pointer", lineHeight: 1
               }}>{theme === "dark" ? "☀️" : "🌙"}</button>
-            <button
-              data-testid="desktop-admin-btn"
-              onClick={() => { setActiveTab("admin"); setEvaluateMode(false); setShowFinancialMenu(false); }}
-              style={{
-                background: activeTab === "admin" ? "var(--fw-nav-active-bg)" : "transparent",
-                border: "none", borderRadius: 6, padding: "6px 10px",
-                color: activeTab === "admin" ? "#A5A1FF" : "#5F5F88", fontSize: 16, cursor: "pointer"
-              }} title="Admin Panel">🛡️</button>
+            {isAdmin && (
+              <button
+                data-testid="desktop-admin-btn"
+                className={`finwise-nav-admin-btn${activeTab === "admin" ? " active" : ""}`}
+                onClick={() => { setActiveTab("admin"); setEvaluateMode(false); setShowFinancialMenu(false); }}
+                title="Admin Panel">🛡️</button>
+            )}
             {user.picture
               ? <img src={user.picture} alt={user.name} style={{ width: 32, height: 32, borderRadius: "50%" }} />
               : <div style={{
@@ -904,38 +914,42 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                 padding: 28,
                 border: "1px solid var(--fw-border)"
               }}>
-                <div style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: 20
-                }}>
-                  <div>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
                     <h3 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 8px" }}>AI Advisory Engine</h3>
-                    <p style={{ color: "var(--fw-text-secondary)", fontSize: 14, margin: 0, maxWidth: 600 }}>
-                      Aggregate your profile information and asset listings to run an AI audit.
-                      The model calculates your health score, ratios, and outputs customized AI-driven product recommendations.
+                    <p style={{ color: "var(--fw-text-secondary)", fontSize: 14, margin: 0, maxWidth: 520 }}>
+                      {evaluateMode
+                        ? "Make sure your profile and financial data are saved, then run the AI audit to calculate your health score, ratios, and product recommendations."
+                        : "Your AI financial health audit results are shown below. Use the Financial Evaluation wizard to run a new analysis."}
                     </p>
                   </div>
-                  <button
-                    onClick={handleRunAnalysis}
-                    disabled={loading}
-                    style={{
-                      background: "linear-gradient(90deg, #6C63FF 0%, #4D33FF 100%)",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 10,
-                      padding: "14px 28px",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      boxShadow: "0 4px 15px rgba(108, 99, 255, 0.3)",
-                      transition: "all 0.2s"
-                    }}
-                  >
-                    {loading ? "Analyzing..." : "⚡ Financial Advice"}
-                  </button>
+                  {evaluateMode && (
+                    <button
+                      onClick={handleRunAnalysis}
+                      disabled={loading}
+                      style={{
+                        background: loading ? "var(--fw-bg-surface)" : "linear-gradient(135deg, #6C63FF, #4D33FF)",
+                        color: loading ? "var(--fw-text-muted)" : "#fff",
+                        border: "none",
+                        borderRadius: 10,
+                        padding: "12px 24px",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: loading ? "not-allowed" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        whiteSpace: "nowrap",
+                        flexShrink: 0
+                      }}
+                    >
+                      {loading ? (
+                        <><span className="fw-spinner" /> Analysing…</>
+                      ) : (
+                        <>⚡ Run AI Analysis</>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1124,7 +1138,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                   Case Lifecycle: <strong>Recommended → Accepted → Declined → Applied</strong>
                 </p>
                 <button
-                  onClick={fetchCases}
+                  onClick={handleRefreshCases}
+                  disabled={refreshingCases}
                   style={{
                     background: "transparent",
                     color: "#A5A1FF",
@@ -1132,10 +1147,11 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                     borderRadius: 6,
                     padding: "6px 12px",
                     fontSize: 12,
-                    cursor: "pointer"
+                    cursor: refreshingCases ? "not-allowed" : "pointer",
+                    opacity: refreshingCases ? 0.6 : 1
                   }}
                 >
-                  Refresh Offers
+                  {refreshingCases ? "Refreshing…" : "Refresh Offers"}
                 </button>
               </div>
 
@@ -1242,18 +1258,18 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                         </div>
 
                         {/* Actions */}
-                        <div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                           {c.status === "Recommended" && (
                             <div style={{ display: "flex", gap: 10 }}>
                               <button
                                 onClick={() => handleUpdateCaseStatus(c.id, "Accepted")}
                                 style={{
                                   flex: 1,
-                                  background: "var(--fw-nav-active-bg)",
-                                  color: "#4338CA",
-                                  border: "1px solid #C7D2FE",
+                                  background: "linear-gradient(90deg, #6C63FF 0%, #4D33FF 100%)",
+                                  color: "#fff",
+                                  border: "none",
                                   borderRadius: 8,
-                                  padding: "10px",
+                                  padding: "11px",
                                   fontSize: 13,
                                   fontWeight: 600,
                                   cursor: "pointer"
@@ -1268,7 +1284,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                                   color: "#E24B4B",
                                   border: "1px solid #FECACA",
                                   borderRadius: 8,
-                                  padding: "10px 16px",
+                                  padding: "11px 16px",
                                   fontSize: 13,
                                   fontWeight: 600,
                                   cursor: "pointer"
@@ -1279,7 +1295,46 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                             </div>
                           )}
 
-                          {(c.status === "Accepted" || c.status === "Recommended") && (
+                          {c.status === "Accepted" && (
+                            <div style={{ display: "flex", gap: 10 }}>
+                              <button
+                                onClick={() => {
+                                  setApplyingCase(c);
+                                  setAppAmount(prod.type === "loan" ? 10000 : 0);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  background: "linear-gradient(90deg, #6C63FF 0%, #4D33FF 100%)",
+                                  color: "#fff",
+                                  border: "none",
+                                  borderRadius: 8,
+                                  padding: "11px",
+                                  fontSize: 13,
+                                  fontWeight: 600,
+                                  cursor: "pointer"
+                                }}
+                              >
+                                Apply Online
+                              </button>
+                              <button
+                                onClick={() => handleUpdateCaseStatus(c.id, "Declined")}
+                                style={{
+                                  background: "#FEF2F2",
+                                  color: "#E24B4B",
+                                  border: "1px solid #FECACA",
+                                  borderRadius: 8,
+                                  padding: "11px 16px",
+                                  fontSize: 13,
+                                  fontWeight: 600,
+                                  cursor: "pointer"
+                                }}
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          )}
+
+                          {c.status === "Recommended" && (
                             <button
                               onClick={() => {
                                 setApplyingCase(c);
@@ -1287,14 +1342,13 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                               }}
                               style={{
                                 width: "100%",
-                                marginTop: 10,
-                                background: "linear-gradient(90deg, #6C63FF 0%, #4D33FF 100%)",
-                                color: "#fff",
-                                border: "none",
+                                background: "transparent",
+                                color: "#6C63FF",
+                                border: "1px solid #6C63FF",
                                 borderRadius: 8,
-                                padding: "12px",
+                                padding: "10px",
                                 fontSize: 13,
-                                fontWeight: 600,
+                                fontWeight: 500,
                                 cursor: "pointer"
                               }}
                             >
@@ -1308,11 +1362,12 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                               style={{
                                 width: "100%",
                                 background: "transparent",
-                                color: "var(--fw-text-secondary)",
-                                border: "1px dashed #CBD5E1",
+                                color: "#6C63FF",
+                                border: "1px solid #6C63FF",
                                 borderRadius: 8,
-                                padding: "10px",
+                                padding: "11px",
                                 fontSize: 13,
+                                fontWeight: 500,
                                 cursor: "pointer"
                               }}
                             >
@@ -1403,8 +1458,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                         <label style={{ display: "block", fontSize: 12, color: "var(--fw-text-secondary)", marginBottom: 6 }}>Requested Loan Amount ($)</label>
                         <input
                           type="number"
-                          value={appAmount}
-                          onChange={(e) => setAppAmount(Number(e.target.value))}
+                          value={appAmount === 0 ? "" : appAmount}
+                          onChange={(e) => setAppAmount(e.target.value === "" ? 0 : Number(e.target.value))}
                           style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13 }}
                           required
                         />
@@ -1415,8 +1470,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                       <label style={{ display: "block", fontSize: 12, color: "var(--fw-text-secondary)", marginBottom: 6 }}>Annual Income ($)</label>
                       <input
                         type="number"
-                        value={appIncome}
-                        onChange={(e) => setAppIncome(Number(e.target.value))}
+                        value={appIncome === 0 ? "" : appIncome}
+                        onChange={(e) => setAppIncome(e.target.value === "" ? 0 : Number(e.target.value))}
                         style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13 }}
                         required
                         min={1}
@@ -1659,7 +1714,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                 </div>
 
                 {/* Table of Members */}
-                {profile.familyMembers.length > 0 && (
+                {(profile.familyMembers ?? []).length > 0 && (
                   <div className="finwise-table-wrap">
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
@@ -1885,8 +1940,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                       <label style={{ display: "block", fontSize: 11, color: "var(--fw-text-secondary)", marginBottom: 4 }}>Value ($)</label>
                       <input
                         type="number"
-                        value={newAssetValue}
-                        onChange={(e) => setNewAssetValue(Number(e.target.value))}
+                        value={newAssetValue === 0 ? "" : newAssetValue}
+                        onChange={(e) => setNewAssetValue(e.target.value === "" ? 0 : Number(e.target.value))}
                         style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 8, color: "var(--fw-text-primary)", fontSize: 12 }}
                       />
                     </div>
@@ -1908,7 +1963,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                     </button>
                   </div>
 
-                  {financialData.assets.length > 0 && (
+                  {(financialData.assets ?? []).length > 0 && (
                     <div className="finwise-table-wrap">
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                       <thead>
@@ -2000,8 +2055,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                       <label style={{ display: "block", fontSize: 11, color: "var(--fw-text-secondary)", marginBottom: 4 }}>Balance ($)</label>
                       <input
                         type="number"
-                        value={newLiabilityValue}
-                        onChange={(e) => setNewLiabilityValue(Number(e.target.value))}
+                        value={newLiabilityValue === 0 ? "" : newLiabilityValue}
+                        onChange={(e) => setNewLiabilityValue(e.target.value === "" ? 0 : Number(e.target.value))}
                         style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 8, color: "var(--fw-text-primary)", fontSize: 12 }}
                       />
                     </div>
@@ -2009,8 +2064,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                       <label style={{ display: "block", fontSize: 11, color: "var(--fw-text-secondary)", marginBottom: 4 }}>Monthly ($)</label>
                       <input
                         type="number"
-                        value={newLiabilityPayment}
-                        onChange={(e) => setNewLiabilityPayment(Number(e.target.value))}
+                        value={newLiabilityPayment === 0 ? "" : newLiabilityPayment}
+                        onChange={(e) => setNewLiabilityPayment(e.target.value === "" ? 0 : Number(e.target.value))}
                         style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 8, color: "var(--fw-text-primary)", fontSize: 12 }}
                       />
                     </div>
@@ -2032,7 +2087,7 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                     </button>
                   </div>
 
-                  {financialData.liabilities.length > 0 && (
+                  {(financialData.liabilities ?? []).length > 0 && (
                     <div className="finwise-table-wrap">
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                       <thead>
@@ -2097,8 +2152,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                       id="primary-yearly-income"
                       type="number"
                       min={0}
-                      value={financialData.primaryYearlyIncome}
-                      onChange={(e) => setFinancialData(prev => ({ ...prev, primaryYearlyIncome: Number(e.target.value) }))}
+                      value={financialData.primaryYearlyIncome === 0 ? "" : financialData.primaryYearlyIncome}
+                      onChange={(e) => setFinancialData(prev => ({ ...prev, primaryYearlyIncome: e.target.value === "" ? 0 : Number(e.target.value) }))}
                       style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13, boxSizing: "border-box" }}
                     />
                   </div>
@@ -2108,8 +2163,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                       id="family-yearly-income"
                       type="number"
                       min={0}
-                      value={financialData.familyYearlyIncome}
-                      onChange={(e) => setFinancialData(prev => ({ ...prev, familyYearlyIncome: Number(e.target.value) }))}
+                      value={financialData.familyYearlyIncome === 0 ? "" : financialData.familyYearlyIncome}
+                      onChange={(e) => setFinancialData(prev => ({ ...prev, familyYearlyIncome: e.target.value === "" ? 0 : Number(e.target.value) }))}
                       style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 8, padding: 10, color: "var(--fw-text-primary)", fontSize: 13, boxSizing: "border-box" }}
                     />
                   </div>
@@ -2174,8 +2229,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                             <input
                               type="number"
                               min={0}
-                              value={exp.monthlyAmount}
-                              onChange={(e) => updateExpenditure(idx, "monthlyAmount", Number(e.target.value))}
+                              value={exp.monthlyAmount === 0 ? "" : exp.monthlyAmount}
+                              onChange={(e) => updateExpenditure(idx, "monthlyAmount", e.target.value === "" ? 0 : Number(e.target.value))}
                               style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 6, padding: "6px 8px", color: "var(--fw-text-primary)", fontSize: 12, textAlign: "right", boxSizing: "border-box" }}
                             />
                           </td>
@@ -2249,8 +2304,8 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
                             <input
                               type="number"
                               min={0}
-                              value={sav.monthlyContribution}
-                              onChange={(e) => updateSaving(idx, "monthlyContribution", Number(e.target.value))}
+                              value={sav.monthlyContribution === 0 ? "" : sav.monthlyContribution}
+                              onChange={(e) => updateSaving(idx, "monthlyContribution", e.target.value === "" ? 0 : Number(e.target.value))}
                               style={{ width: "100%", background: "var(--fw-bg-surface)", border: "1px solid var(--fw-border)", borderRadius: 6, padding: "6px 8px", color: "var(--fw-text-primary)", fontSize: 12, textAlign: "right", boxSizing: "border-box" }}
                             />
                           </td>
