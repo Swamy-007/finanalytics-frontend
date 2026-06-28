@@ -68,7 +68,11 @@ const App: React.FC = () => {
       res => res,
       err => {
         if (axios.isAxiosError(err) && err.response?.status === 401 && user) {
-          logout("Your session has expired. Please sign in again.");
+          // auth/sync is fire-and-forget; its failure must never trigger logout.
+          const url = (err.config?.url ?? "") as string;
+          if (!url.includes("/auth/sync")) {
+            logout("Your session has expired. Please sign in again.");
+          }
         }
         return Promise.reject(err);
       }

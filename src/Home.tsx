@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, Component } from "react";
+import React, { useState, useEffect, useCallback, useRef, Component } from "react";
 import axios from "axios";
 import Dashboard from "./Dashboard";
 import { useTheme } from "./ThemeContext.ts";
@@ -239,9 +239,19 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
   const closeMobileNav = () => setMobileNavOpen(false);
   const [evaluateStep, setEvaluateStep] = useState<number>(1);
 
+  // Mutable ref holds the active auth token. Initialized with whatever token
+  // the user logged in with (Google ID token or session token). Swapped to a
+  // backend-issued session token after auth/sync responds, so Google users
+  // never hit a 1-hour token-expiry 401 on subsequent calls.
+  const authTokenRef = useRef<string>(user.token ?? "");
+
+  // Sync ref when user.token changes externally (e.g. parent re-login).
+  useEffect(() => { authTokenRef.current = user.token ?? ""; }, [user.token]);
+
+  // Stable callback — reads from ref at call time, never causes re-renders.
   const getAxiosConfig = useCallback(() => ({
-    headers: { Authorization: `Bearer ${user.token}` },
-  }), [user.token]);
+    headers: { Authorization: `Bearer ${authTokenRef.current}` },
+  }), []);
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -306,8 +316,13 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
   // Load user data on mount + sync login to Google Sheets (non-fatal)
   useEffect(() => {
     (async () => {
-      axios.post<{ ok: boolean; isAdmin?: boolean }>(`${apiUrl}/api/auth/sync`, {}, getAxiosConfig())
-        .then(res => { if (res.data.isAdmin) setIsAdmin(true); })
+      axios.post<{ ok: boolean; isAdmin?: boolean; sessionToken?: string }>(`${apiUrl}/api/auth/sync`, {}, getAxiosConfig())
+        .then(res => {
+          // Swap to backend session token (7-day expiry) so Google users
+          // don't get a 401 when their 1-hour ID token expires mid-session.
+          if (res.data.sessionToken) authTokenRef.current = res.data.sessionToken;
+          if (res.data.isAdmin) setIsAdmin(true);
+        })
         .catch(err => console.warn("[auth/sync] login sync failed (non-fatal):", err?.message));
       await fetchProfile();
       await fetchFinancialData();
