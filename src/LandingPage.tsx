@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { GoogleLogin } from "@react-oauth/google";
-import { jwtDecode } from "jwt-decode";
 import axios from "axios";
 import { useTheme } from "./ThemeContext.ts";
 
@@ -20,15 +19,6 @@ interface LandingPageProps {
 }
 
 type AuthMode = "login" | "register";
-
-interface DecodedToken {
-  name: string;
-  email: string;
-  picture: string;
-  email_verified: boolean;
-  exp: number;
-  iat: number;
-}
 
 const FEATURES = [
   {
@@ -125,26 +115,26 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, sessionMsg }) => {
     }
   };
 
-  const handleGoogleSuccess = (credentialResponse: { credential?: string }) => {
+  const handleGoogleSuccess = async (credentialResponse: { credential?: string }) => {
+    const credential = credentialResponse.credential;
+    if (!credential) {
+      setAuthError("Google did not return a credential. Please try again.");
+      return;
+    }
     try {
-      const token = credentialResponse.credential;
-      if (!token) {
-        setAuthError("Google did not return a credential. Please try again.");
-        return;
-      }
-      const decoded = jwtDecode<DecodedToken>(token);
-      onLogin({
-        name: decoded.name,
-        email: decoded.email,
-        picture: decoded.picture,
-        email_verified: decoded.email_verified,
-        exp: decoded.exp,
-        iat: decoded.iat,
-        token,
-      });
+      // Exchange the short-lived Google credential for a 7-day backend session token.
+      // This means user.token is ALWAYS a session token — the Google credential is
+      // never used as an Authorization header for any data API call.
+      const res = await axios.post<{ sessionToken: string; email: string; name: string; isAdmin: boolean }>(
+        `${apiUrl}/api/auth/google-exchange`,
+        { credential }
+      );
+      const { sessionToken, email, name } = res.data;
+      onLogin({ name, email, picture: "", email_verified: true, exp: 0, iat: 0, token: sessionToken });
     } catch (err) {
       console.error("Google sign-in error:", err);
-      setAuthError("Google sign-in failed. Please try again.");
+      const msg = axios.isAxiosError(err) ? err.response?.data?.error : null;
+      setAuthError(msg || "Google sign-in failed. Please try again.");
     }
   };
 

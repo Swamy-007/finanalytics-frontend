@@ -50,21 +50,17 @@ vi.mock("@react-oauth/google", () => ({
   ),
 }));
 
-vi.mock("jwt-decode", () => ({
-  jwtDecode: () => ({
-    name: "Gmail User",
-    email: "gmail@example.com",
-    picture: "https://pic.example.com/avatar.jpg",
-    email_verified: true,
-    exp: 9999999999,
-    iat: 1700000000,
-  }),
-}));
-
 vi.mock("axios", () => ({
   default: {
     get: vi.fn().mockResolvedValue({ data: {} }),
-    post: vi.fn(),
+    post: vi.fn().mockImplementation((url: unknown) => {
+      if (typeof url === "string" && url.includes("/api/auth/google-exchange")) {
+        return Promise.resolve({
+          data: { sessionToken: "google-session-tok", email: "gmail@example.com", name: "Gmail User", isAdmin: false },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    }),
     isAxiosError: vi.fn().mockReturnValue(false),
     interceptors: {
       response: { use: vi.fn().mockReturnValue(1), eject: vi.fn() },
@@ -87,22 +83,40 @@ function switchToRegister() {
 // ──────────────── tests ────────────────
 
 describe("LandingPage – Google Sign-In (Gmail)", () => {
-  it("calls onLogin with the decoded Google user on success", () => {
+  it("exchanges Google credential for a session token and calls onLogin", async () => {
     const onLogin = vi.fn();
     render(<LandingPage onLogin={onLogin} />);
     openModal();
 
     fireEvent.click(screen.getByTestId("google-success-btn"));
 
-    expect(onLogin).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onLogin).toHaveBeenCalledOnce());
     expect(onLogin).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "Gmail User",
         email: "gmail@example.com",
         email_verified: true,
-        token: "mock-google-token",
+        token: "google-session-tok",
       })
     );
+    expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+      expect.stringContaining("/api/auth/google-exchange"),
+      { credential: "mock-google-token" }
+    );
+  });
+
+  it("shows an error when the google-exchange API call fails", async () => {
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
+    const onLogin = vi.fn();
+    render(<LandingPage onLogin={onLogin} />);
+    openModal();
+
+    fireEvent.click(screen.getByTestId("google-success-btn"));
+
+    await waitFor(() =>
+      expect(screen.getByText(/google sign-in failed/i)).toBeInTheDocument()
+    );
+    expect(onLogin).not.toHaveBeenCalled();
   });
 
   it("shows an error message when Google sign-in fails", () => {
@@ -137,7 +151,7 @@ describe("LandingPage – Google Sign-In (Gmail)", () => {
     expect(screen.getByTestId("google-success-btn")).toBeInTheDocument();
   });
 
-  it("Google sign-in from the Register tab also calls onLogin", () => {
+  it("Google sign-in from the Register tab also calls onLogin", async () => {
     const onLogin = vi.fn();
     render(<LandingPage onLogin={onLogin} />);
     openModal();
@@ -145,9 +159,9 @@ describe("LandingPage – Google Sign-In (Gmail)", () => {
 
     fireEvent.click(screen.getByTestId("google-success-btn"));
 
-    expect(onLogin).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onLogin).toHaveBeenCalledOnce());
     expect(onLogin).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Gmail User" })
+      expect.objectContaining({ name: "Gmail User", token: "google-session-tok" })
     );
   });
 });

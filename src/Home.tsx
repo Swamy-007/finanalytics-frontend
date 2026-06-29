@@ -313,17 +313,21 @@ const Home: React.FC<HomeProps> = ({ user, onLogout }) => {
     }
   };
 
-  // Load user data on mount + sync login to Google Sheets (non-fatal)
+  // Load user data on mount.
+  // auth/sync is awaited FIRST so the session token is swapped before data fetches run.
+  // Google ID tokens expire in 1 hour; waiting for the swap means data calls always
+  // use the 7-day session token instead of the short-lived Google token.
   useEffect(() => {
     (async () => {
-      axios.post<{ ok: boolean; isAdmin?: boolean; sessionToken?: string }>(`${apiUrl}/api/auth/sync`, {}, getAxiosConfig())
-        .then(res => {
-          // Swap to backend session token (7-day expiry) so Google users
-          // don't get a 401 when their 1-hour ID token expires mid-session.
-          if (res.data.sessionToken) authTokenRef.current = res.data.sessionToken;
-          if (res.data.isAdmin) setIsAdmin(true);
-        })
-        .catch(err => console.warn("[auth/sync] login sync failed (non-fatal):", err?.message));
+      try {
+        const res = await axios.post<{ ok: boolean; isAdmin?: boolean; sessionToken?: string }>(
+          `${apiUrl}/api/auth/sync`, {}, getAxiosConfig()
+        );
+        if (res.data.sessionToken) authTokenRef.current = res.data.sessionToken;
+        if (res.data.isAdmin) setIsAdmin(true);
+      } catch (err) {
+        console.warn("[auth/sync] login sync failed (non-fatal):", axios.isAxiosError(err) ? err.message : err);
+      }
       await fetchProfile();
       await fetchFinancialData();
       await fetchCases();
