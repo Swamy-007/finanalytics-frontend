@@ -1,16 +1,18 @@
 /**
  * Authentication flow tests for LandingPage.
  *
- * Covers both sign-in methods:
- *  - Google (Gmail) OAuth via the GoogleLogin component
- *  - Email / password login (POST /api/users/login)
+ * Google sign-in is tested under BOTH toggle states:
+ *   - VITE_USE_GOOGLE_EXCHANGE=false  (legacy: jwtDecode + Google token as Bearer)
+ *   - VITE_USE_GOOGLE_EXCHANGE=true   (new:    google-exchange → 7-day session token)
  *
- * Also covers registration and session-message display.
+ * Email/password login, registration, and session-message display are
+ * toggle-independent and tested once.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import LandingPage from "./LandingPage";
 import axios from "axios";
+import { jwtDecode } from "jwt-decode";
 
 // ──────────────── mocks ────────────────
 
@@ -50,6 +52,18 @@ vi.mock("@react-oauth/google", () => ({
   ),
 }));
 
+// jwt-decode mock — used only by the legacy flow (VITE_USE_GOOGLE_EXCHANGE=false)
+vi.mock("jwt-decode", () => ({
+  jwtDecode: vi.fn().mockReturnValue({
+    name: "Gmail User",
+    email: "gmail@example.com",
+    picture: "http://example.com/pic.jpg",
+    email_verified: true,
+    exp: 9999999999,
+    iat: 1000000000,
+  }),
+}));
+
 vi.mock("axios", () => ({
   default: {
     get: vi.fn().mockResolvedValue({ data: {} }),
@@ -68,7 +82,10 @@ vi.mock("axios", () => ({
   },
 }));
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
+});
 
 // ──────────────── helpers ────────────────
 
@@ -80,9 +97,92 @@ function switchToRegister() {
   fireEvent.click(screen.getByRole("button", { name: /^register$/i }));
 }
 
-// ──────────────── tests ────────────────
+// ──────────────── Google – toggle-independent tests ────────────────
 
-describe("LandingPage – Google Sign-In (Gmail)", () => {
+describe("LandingPage – Google Sign-In (toggle-independent)", () => {
+  it("shows an error when Google sign-in fails (onError callback)", () => {
+    render(<LandingPage onLogin={vi.fn()} />);
+    openModal();
+    fireEvent.click(screen.getByTestId("google-error-btn"));
+    expect(screen.getByText(/google sign-in failed/i)).toBeInTheDocument();
+  });
+
+  it("shows an error when Google returns no credential", () => {
+    render(<LandingPage onLogin={vi.fn()} />);
+    openModal();
+    fireEvent.click(screen.getByTestId("google-nocred-btn"));
+    expect(
+      screen.getByText(/google did not return a credential/i)
+    ).toBeInTheDocument();
+  });
+
+  it("Google sign-in button is available in the Register tab", () => {
+    render(<LandingPage onLogin={vi.fn()} />);
+    openModal();
+    switchToRegister();
+    expect(screen.getByTestId("google-success-btn")).toBeInTheDocument();
+  });
+});
+
+// ──────────────── Google – legacy flow (VITE_USE_GOOGLE_EXCHANGE=false) ────
+
+describe("LandingPage – Google Sign-In – legacy flow (VITE_USE_GOOGLE_EXCHANGE=false)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_USE_GOOGLE_EXCHANGE", "false");
+  });
+
+  it("decodes the Google credential client-side and calls onLogin with it as token", () => {
+    const onLogin = vi.fn();
+    render(<LandingPage onLogin={onLogin} />);
+    openModal();
+
+    fireEvent.click(screen.getByTestId("google-success-btn"));
+
+    expect(onLogin).toHaveBeenCalledOnce();
+    expect(onLogin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Gmail User",
+        email: "gmail@example.com",
+        email_verified: true,
+        token: "mock-google-token",  // raw Google credential used as Bearer
+      })
+    );
+    // Must NOT call the backend exchange endpoint
+    expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+  });
+
+  it("shows an error when jwtDecode throws (malformed credential)", () => {
+    vi.mocked(jwtDecode).mockImplementationOnce(() => { throw new Error("Invalid token"); });
+
+    render(<LandingPage onLogin={vi.fn()} />);
+    openModal();
+    fireEvent.click(screen.getByTestId("google-success-btn"));
+
+    expect(screen.getByText(/google sign-in failed/i)).toBeInTheDocument();
+  });
+
+  it("Register tab Google sign-in also uses legacy flow", () => {
+    const onLogin = vi.fn();
+    render(<LandingPage onLogin={onLogin} />);
+    openModal();
+    switchToRegister();
+
+    fireEvent.click(screen.getByTestId("google-success-btn"));
+
+    expect(onLogin).toHaveBeenCalledOnce();
+    expect(onLogin).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "mock-google-token" })
+    );
+  });
+});
+
+// ──────────────── Google – session-token flow (VITE_USE_GOOGLE_EXCHANGE=true) ──
+
+describe("LandingPage – Google Sign-In – session-token flow (VITE_USE_GOOGLE_EXCHANGE=true)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_USE_GOOGLE_EXCHANGE", "true");
+  });
+
   it("exchanges Google credential for a session token and calls onLogin", async () => {
     const onLogin = vi.fn();
     render(<LandingPage onLogin={onLogin} />);
@@ -96,7 +196,7 @@ describe("LandingPage – Google Sign-In (Gmail)", () => {
         name: "Gmail User",
         email: "gmail@example.com",
         email_verified: true,
-        token: "google-session-tok",
+        token: "google-session-tok",  // backend session token, NOT the Google credential
       })
     );
     expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
@@ -107,8 +207,7 @@ describe("LandingPage – Google Sign-In (Gmail)", () => {
 
   it("shows an error when the google-exchange API call fails", async () => {
     vi.mocked(axios.post).mockRejectedValueOnce(new Error("Network error"));
-    const onLogin = vi.fn();
-    render(<LandingPage onLogin={onLogin} />);
+    render(<LandingPage onLogin={vi.fn()} />);
     openModal();
 
     fireEvent.click(screen.getByTestId("google-success-btn"));
@@ -116,42 +215,9 @@ describe("LandingPage – Google Sign-In (Gmail)", () => {
     await waitFor(() =>
       expect(screen.getByText(/google sign-in failed/i)).toBeInTheDocument()
     );
-    expect(onLogin).not.toHaveBeenCalled();
   });
 
-  it("shows an error message when Google sign-in fails", () => {
-    const onLogin = vi.fn();
-    render(<LandingPage onLogin={onLogin} />);
-    openModal();
-
-    fireEvent.click(screen.getByTestId("google-error-btn"));
-
-    expect(screen.getByText(/google sign-in failed/i)).toBeInTheDocument();
-    expect(onLogin).not.toHaveBeenCalled();
-  });
-
-  it("shows an error when Google returns no credential", () => {
-    const onLogin = vi.fn();
-    render(<LandingPage onLogin={onLogin} />);
-    openModal();
-
-    fireEvent.click(screen.getByTestId("google-nocred-btn"));
-
-    expect(
-      screen.getByText(/google did not return a credential/i)
-    ).toBeInTheDocument();
-    expect(onLogin).not.toHaveBeenCalled();
-  });
-
-  it("Google sign-in is also available in the Register tab", () => {
-    render(<LandingPage onLogin={vi.fn()} />);
-    openModal();
-    switchToRegister();
-
-    expect(screen.getByTestId("google-success-btn")).toBeInTheDocument();
-  });
-
-  it("Google sign-in from the Register tab also calls onLogin", async () => {
+  it("Register tab Google sign-in also uses the session-token flow", async () => {
     const onLogin = vi.fn();
     render(<LandingPage onLogin={onLogin} />);
     openModal();
@@ -165,6 +231,8 @@ describe("LandingPage – Google Sign-In (Gmail)", () => {
     );
   });
 });
+
+// ──────────────── Email / Password Login ────────────────
 
 describe("LandingPage – Email / Password Login", () => {
   beforeEach(() => {
@@ -263,6 +331,8 @@ describe("LandingPage – Email / Password Login", () => {
     );
   });
 });
+
+// ──────────────── Registration ────────────────
 
 describe("LandingPage – Registration", () => {
   beforeEach(() => {
@@ -375,6 +445,8 @@ describe("LandingPage – Registration", () => {
     );
   });
 });
+
+// ──────────────── Session Message Banner ────────────────
 
 describe("LandingPage – Session Message Banner", () => {
   it("shows the session banner when sessionMsg is provided", () => {
